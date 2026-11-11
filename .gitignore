@@ -1,0 +1,42 @@
+# Dependencias de Node.js (nunca deben subirse al repositorio)
+node_modules/
+**/node_modules/
+.pnp
+.pnp.js
+
+# Compilados y builds de producción
+dist/
+build/
+**/dist/
+**/build/
+
+# Bases de datos locales SQLite y archivos temporales WAL/SHM
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite-journal
+
+# Variables de entorno reales (sí se sube .env.example)
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+**/.env
+
+# Archivos multimedia subidos por usuarios y exportaciones ZIP generadas
+# (Se conservan las carpetas con .gitkeep y los SVGs de muestra si se desea)
+storage/exports/*
+!storage/exports/.gitkeep
+storage/uploads/media_*
+
+# Logs y cachés del sistema / editor
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.DS_Store
+Thumbs.db
+*.tsbuildinfo
+.vite/
