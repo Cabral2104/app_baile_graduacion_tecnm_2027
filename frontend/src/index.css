@@ -1,0 +1,349 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Keyframes globales fuera de @layer para evitar que el compilador los elimine */
+@keyframes marquee {
+  0% {
+    transform: translate3d(0, 0, 0);
+  }
+  100% {
+    transform: translate3d(-50%, 0, 0);
+  }
+}
+
+@keyframes beam-sway {
+  0% {
+    transform: rotate(-20deg);
+  }
+  100% {
+    transform: rotate(20deg);
+  }
+}
+
+@keyframes drift {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 0.3;
+  }
+  50% {
+    transform: translate3d(24px, -32px, 0) scale(1.22);
+    opacity: 0.7;
+  }
+}
+
+@keyframes star-twinkle {
+  0%,
+  100% {
+    opacity: 0.22;
+    transform: scale(0.8);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.25);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    background-color: #040818;
+    color: #F8FAFC;
+    overflow-x: hidden;
+  }
+
+  h1.font-serif,
+  h2.font-serif {
+    font-family: 'Cinzel', Georgia, serif;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    text-wrap: balance;
+  }
+
+  button,
+  a {
+    transition: transform 0.18s ease, background-color 0.25s ease,
+      border-color 0.25s ease, color 0.25s ease, opacity 0.25s ease,
+      box-shadow 0.25s ease;
+  }
+
+  button:not(:disabled):active,
+  a:active {
+    transform: scale(0.97);
+  }
+
+  button:focus-visible,
+  a:focus-visible,
+  input:focus-visible,
+  textarea:focus-visible,
+  select:focus-visible {
+    outline: 2px solid #E5B85B;
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+@layer components {
+  /* Cielo de "La Noche Estrellada": Azul medianoche profundo, nebulosa real y destellos plata/oro */
+  .aurora-bg {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    overflow: hidden;
+    pointer-events: none;
+    background:
+      radial-gradient(85% 55% at 50% -5%, rgba(56, 103, 224, 0.42) 0%, transparent 70%),
+      radial-gradient(65% 45% at 85% 20%, rgba(226, 232, 240, 0.16) 0%, transparent 65%),
+      radial-gradient(65% 50% at 15% 80%, rgba(229, 184, 91, 0.16) 0%, transparent 65%),
+      linear-gradient(180deg, #07112C 0%, #050B1F 52%, #030613 100%);
+  }
+
+  .aurora-bg::before,
+  .aurora-bg::after {
+    content: '';
+    position: absolute;
+    width: 58vmax;
+    height: 58vmax;
+    border-radius: 9999px;
+    filter: blur(110px);
+    opacity: 0.38;
+  }
+
+  .aurora-bg::before {
+    top: -22vmax;
+    left: -18vmax;
+    background: radial-gradient(circle, rgba(56, 103, 224, 0.72), transparent 65%);
+  }
+
+  .aurora-bg::after {
+    bottom: -26vmax;
+    right: -18vmax;
+    background: radial-gradient(circle, rgba(229, 184, 91, 0.48), rgba(226, 232, 240, 0.25) 45%, transparent 70%);
+  }
+
+  /* Haces de luz estelar */
+  .beam {
+    position: absolute;
+    top: -8%;
+    width: 44vmax;
+    height: 125vh;
+    margin-left: -22vmax;
+    transform-origin: 50% 0%;
+    clip-path: polygon(46% 0, 54% 0, 100% 100%, 0 100%);
+    filter: blur(10px);
+    mix-blend-mode: screen;
+    animation: beam-sway 14s ease-in-out infinite alternate;
+  }
+
+  .orb {
+    position: absolute;
+    border-radius: 9999px;
+    filter: blur(2px);
+    animation: drift 14s ease-in-out infinite;
+  }
+
+  .star-dot {
+    position: absolute;
+    border-radius: 9999px;
+    animation: star-twinkle 4s ease-in-out infinite;
+  }
+
+  /* Texto con destello de oro y plata estelar */
+  .text-shimmer {
+    background: linear-gradient(
+      100deg,
+      #E5B85B 15%,
+      #F8FAFC 38%,
+      #F6E2A8 52%,
+      #CBD5E1 68%,
+      #E5B85B 85%
+    );
+    background-size: 200% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: shimmer 6s linear infinite;
+  }
+
+  .text-silver-shimmer {
+    background: linear-gradient(
+      100deg,
+      #CBD5E1 15%,
+      #FFFFFF 45%,
+      #93C5FD 65%,
+      #E2E8F0 85%
+    );
+    background-size: 200% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: shimmer 6s linear infinite;
+  }
+
+  .btn-gold {
+    position: relative;
+    overflow: hidden;
+    background: linear-gradient(135deg, #F6E2A8 0%, #E5B85B 55%, #C99738 100%);
+    color: #040818;
+    box-shadow: 0 8px 26px -8px rgba(229, 184, 91, 0.75),
+      inset 0 1px 0 rgba(255, 255, 255, 0.65);
+  }
+  .btn-gold::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      110deg,
+      transparent 30%,
+      rgba(255, 255, 255, 0.6) 50%,
+      transparent 70%
+    );
+    transform: translateX(-120%);
+    transition: transform 0.7s ease;
+  }
+  .btn-gold:hover::after {
+    transform: translateX(120%);
+  }
+
+  .btn-silver {
+    position: relative;
+    overflow: hidden;
+    background: linear-gradient(135deg, rgba(226, 232, 240, 0.18), rgba(148, 163, 184, 0.08));
+    border: 1px solid rgba(226, 232, 240, 0.45);
+    color: #F8FAFC;
+    box-shadow: 0 6px 20px -8px rgba(148, 163, 184, 0.35);
+  }
+  .btn-silver:hover {
+    border-color: rgba(246, 226, 168, 0.75);
+    background: linear-gradient(135deg, rgba(226, 232, 240, 0.26), rgba(229, 184, 91, 0.15));
+  }
+
+  /* Tarjeta cristal Noche Estrellada con esquinas en plata y oro */
+  .glass {
+    --c-gold: rgba(229, 184, 91, 0.85);
+    --c-silver: rgba(226, 232, 240, 0.75);
+    position: relative;
+    background: linear-gradient(
+      160deg,
+      rgba(20, 42, 98, 0.68) 0%,
+      rgba(9, 19, 48, 0.84) 60%,
+      rgba(5, 11, 28, 0.9) 100%
+    );
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(226, 232, 240, 0.22);
+    box-shadow: 0 24px 60px -28px rgba(0, 0, 0, 0.92),
+      0 0 35px -18px rgba(56, 103, 224, 0.4),
+      inset 0 1px 0 rgba(248, 250, 252, 0.12);
+  }
+  .glass::before {
+    content: '';
+    position: absolute;
+    inset: 6px;
+    pointer-events: none;
+    border-radius: inherit;
+    z-index: 5;
+    background:
+      linear-gradient(var(--c-gold), var(--c-gold)) top left / 16px 1px no-repeat,
+      linear-gradient(var(--c-gold), var(--c-gold)) top left / 1px 16px no-repeat,
+      linear-gradient(var(--c-silver), var(--c-silver)) top right / 16px 1px no-repeat,
+      linear-gradient(var(--c-silver), var(--c-silver)) top right / 1px 16px no-repeat,
+      linear-gradient(var(--c-silver), var(--c-silver)) bottom left / 16px 1px no-repeat,
+      linear-gradient(var(--c-silver), var(--c-silver)) bottom left / 1px 16px no-repeat,
+      linear-gradient(var(--c-gold), var(--c-gold)) bottom right / 16px 1px no-repeat,
+      linear-gradient(var(--c-gold), var(--c-gold)) bottom right / 1px 16px no-repeat;
+  }
+
+  .lift {
+    transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1),
+      box-shadow 0.35s ease, border-color 0.35s ease;
+  }
+  .lift:hover {
+    transform: translateY(-5px);
+    border-color: rgba(229, 184, 91, 0.65);
+    box-shadow: 0 30px 60px -24px rgba(0, 0, 0, 0.95),
+      0 0 40px -10px rgba(229, 184, 91, 0.32),
+      0 0 25px -8px rgba(226, 232, 240, 0.25);
+  }
+
+  .ornament {
+    height: 1px;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgba(226, 232, 240, 0.6),
+      rgba(229, 184, 91, 0.95),
+      rgba(226, 232, 240, 0.6),
+      transparent
+    );
+  }
+
+  /* Carrusel continuo con desvanecimiento suave en los bordes para que nunca se vea cortado */
+  .marquee-mask {
+    position: relative;
+    overflow: hidden;
+    -webkit-mask-image: linear-gradient(
+      90deg,
+      transparent 0%,
+      #000 7%,
+      #000 93%,
+      transparent 100%
+    );
+    mask-image: linear-gradient(
+      90deg,
+      transparent 0%,
+      #000 7%,
+      #000 93%,
+      transparent 100%
+    );
+  }
+
+  .marquee-track {
+    display: flex;
+    width: max-content;
+    will-change: transform;
+    animation: marquee 22s linear infinite;
+  }
+
+  .marquee-track:hover {
+    animation-play-state: paused;
+  }
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #060D24;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(226, 232, 240, 0.35);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(229, 184, 91, 0.7);
+}

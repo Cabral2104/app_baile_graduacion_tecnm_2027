@@ -1,0 +1,26 @@
+{
+  "provider": "cloudflare-r2-or-aws-s3",
+  "mode": "local_or_presigned",
+  "localStoragePath": "../storage/uploads",
+  "bucketName": "graduacion-gala-2026-media",
+  "region": "auto",
+  "endpoint": "https://<ACCOUNT_ID>.r2.cloudflarestorage.com",
+  "presignedUrlExpirationSeconds": 900,
+  "limits": {
+    "maxFileSizeBytes": 52428800,
+    "maxVideoDurationSeconds": 45,
+    "allowedImageMimeTypes": [
+      "image/jpeg",
+      "image/png",
+      "image/webp",
+      "image/heic",
+      "image/heif"
+    ],
+    "allowedVideoMimeTypes": [
+      "video/mp4",
+      "video/quicktime",
+      "video/webm"
+    ]
+  }
+}
+

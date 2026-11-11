@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1060" width="1600" height="1060">
+    <defs>
+      <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stop-color="#040818" />
+        <stop offset="50%" stop-color="#0D1E4C" />
+        <stop offset="100%" stop-color="#030612" />
+      </linearGradient>
+      <radialGradient id="nebula" cx="50%" cy="38%" r="58%">
+        <stop offset="0%" stop-color="#3867E0" stop-opacity="0.38" />
+        <stop offset="55%" stop-color="#E5B85B" stop-opacity="0.14" />
+        <stop offset="100%" stop-color="#030612" stop-opacity="0" />
+      </radialGradient>
+      <linearGradient id="goldSilver" x1="0%" y1="0%" x2="100%" y2="0%">
+        <stop offset="0%" stop-color="#E2E8F0" />
+        <stop offset="50%" stop-color="#E5B85B" />
+        <stop offset="100%" stop-color="#E2E8F0" />
+      </linearGradient>
+    </defs>
+    <rect width="1600" height="1060" fill="url(#bg)" />
+    <rect width="1600" height="1060" fill="url(#nebula)" />
+
+    <!-- Constelaciones y estrellas de la Noche Estrellada -->
+    <g stroke="#E2E8F0" stroke-opacity="0.28" stroke-width="1.2" fill="none">
+      <polyline points="210,190 290,150 380,210 460,160 530,240" />
+      <polyline points="1080,180 1170,140 1260,200 1350,150 1410,230" />
+      <polyline points="640,290 730,240 800,310 880,250 960,300" />
+    </g>
+
+    <!-- Estrellas plateadas y doradas -->
+    <g fill="#E2E8F0" opacity="0.85">
+      <circle cx="210" cy="190" r="3.5" />
+      <circle cx="290" cy="150" r="4.5" />
+      <circle cx="380" cy="210" r="3" />
+      <circle cx="460" cy="160" r="5" fill="#E5B85B" />
+      <circle cx="530" cy="240" r="3.5" />
+      <circle cx="1080" cy="180" r="3.5" />
+      <circle cx="1170" cy="140" r="5" fill="#E5B85B" />
+      <circle cx="1260" cy="200" r="3.5" />
+      <circle cx="1350" cy="150" r="4.5" />
+      <circle cx="1410" cy="230" r="3" />
+      <circle cx="640" cy="290" r="3.5" />
+      <circle cx="730" cy="240" r="4.5" fill="#E5B85B" />
+      <circle cx="800" cy="310" r="5.5" />
+      <circle cx="880" cy="250" r="4.5" fill="#E5B85B" />
+      <circle cx="960" cy="300" r="3.5" />
+      <circle cx="180" cy="520" r="2.5" />
+      <circle cx="310" cy="680" r="3" />
+      <circle cx="1320" cy="560" r="3" />
+      <circle cx="1420" cy="720" r="2.5" />
+    </g>
+
+    <!-- Destello estelar central de 4 puntas -->
+    <path d="M800,330 Q800,395 865,395 Q800,395 800,460 Q800,395 735,395 Q800,395 800,330 Z" fill="#E5B85B" fill-opacity="0.85" />
+    <path d="M800,355 Q800,395 840,395 Q800,395 800,435 Q800,395 760,395 Q800,395 800,355 Z" fill="#E2E8F0" />
+
+    <!-- Marcos ornamentales en plata y oro -->
+    <rect x="64" y="64" width="1472" height="932" rx="18" fill="none" stroke="url(#goldSilver)" stroke-opacity="0.55" stroke-width="2.5" />
+    <rect x="86" y="86" width="1428" height="888" rx="12" fill="none" stroke="#E2E8F0" stroke-opacity="0.22" stroke-width="1" />
+
+    <!-- Aros celestes centrales -->
+    <circle cx="800" cy="395" r="175" fill="none" stroke="#E5B85B" stroke-opacity="0.38" stroke-width="1.8" />
+    <circle cx="800" cy="395" r="130" fill="none" stroke="#E2E8F0" stroke-opacity="0.28" stroke-width="1.2" stroke-dasharray="6 8" />
+    <path d="M620,455 Q800,265 980,455" fill="none" stroke="url(#goldSilver)" stroke-opacity="0.6" stroke-width="2.5" />
+
+    <text x="800" y="185" text-anchor="middle" fill="#E5B85B" font-family="Cinzel, Georgia, serif" font-size="22" font-weight="600" letter-spacing="8">MODO MEMORIA · EL INICIO</text>
+    <text x="800" y="675" text-anchor="middle" fill="#F8FAFC" font-family="Georgia, serif" font-size="60" font-style="italic">Primer Día en Rectoría</text>
+    <text x="800" y="742" text-anchor="middle" fill="#E2E8F0" font-family="sans-serif" font-size="26" letter-spacing="2">Agosto 2022 · El comienzo de nuestra historia universitaria</text>
+    <line x1="650" y1="802" x2="950" y2="802" stroke="url(#goldSilver)" stroke-opacity="0.65" stroke-width="1.8" />
+    <text x="800" y="855" text-anchor="middle" fill="#E5B85B" font-family="Cinzel, Georgia, serif" font-size="20" letter-spacing="6">GRADUACIÓN TECNM · NOCHE ESTRELLADA 2022 – 2026</text>
+  </svg>

@@ -1,0 +1,96 @@
+// ============================================================================
+// PRISMA SCHEMA - PLATAFORMA INTEGRAL DE BAILE DE GRADUACION UNIVERSITARIA
+// Modelos: User, MediaItem, SequenceOrder, SystemConfig
+// ============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// 1. Control de Acceso sin Matrículas (Lista Oficial Precargada)
+model User {
+  id                  String      @id @default(uuid())
+  nombre_completo     String
+  nombre_normalizado  String      // Normalizado sin acentos y en minúsculas para Typeahead
+  distintivo_homonimo String?     // Ej: "Ingeniería Industrial - Mesa 4" para distinguir homónimos
+  mesa                String?     // Número o nombre de mesa asignada en el salón
+  pin_hash            String?     // Null en primer ingreso; hash scrypt/bcrypt de 4 dígitos tras activación
+  rol                 String      @default("ALUMNO") // 'ALUMNO' | 'ADMIN'
+  activo              Boolean     @default(true)
+  created_at          DateTime    @default(now())
+  updated_at          DateTime    @updatedAt
+
+  // Relaciones
+  media_items         MediaItem[] @relation("UploadedByUser")
+  moderated_items     MediaItem[] @relation("ModeratedByAdmin")
+
+  @@index([nombre_normalizado])
+}
+
+// 2. Pipeline de Fotos y Videos (Pre-evento, En Vivo y Fotógrafo Oficial)
+model MediaItem {
+  id                String         @id @default(uuid())
+  usuario_id        String
+  origen            String         // 'PRE_EVENTO' | 'EN_VIVO' | 'FOTOGRAFO'
+  etapa             String         // 'INICIO' | 'SUPERVIVENCIA' | 'RECTA_FINAL' | 'GALA'
+  pie_de_foto       String
+  estado            String         @default("PENDIENTE") // 'PENDIENTE' | 'APROBADO_VIDEO' | 'APROBADO_GALERIA' | 'RECHAZADO'
+  tipo_medio        String         // 'FOTO' | 'VIDEO'
+  archivo_url       String         // Ruta en storage local o bucket S3/R2
+  miniatura_url     String?
+  nombre_original   String
+  mime_type         String
+  tamano_bytes      Int
+  duracion_seg      Float?         // Para videos cortos (máx 45s)
+  solicitud_retiro  Boolean        @default(false) // Privacidad en Modo Memoria
+  motivo_retiro     String?
+  moderado_por_id   String?
+  moderado_en       DateTime?
+  created_at        DateTime       @default(now())
+
+  // Relaciones
+  usuario           User           @relation("UploadedByUser", fields: [usuario_id], references: [id], onDelete: Cascade)
+  moderado_por      User?          @relation("ModeratedByAdmin", fields: [moderado_por_id], references: [id])
+  sequence_order    SequenceOrder?
+
+  @@index([estado, origen])
+  @@index([etapa])
+  @@index([usuario_id])
+}
+
+// 3. Secuenciador Visual tipo Storyboard para el Video Conmemorativo
+model SequenceOrder {
+  id                   String    @id @default(uuid())
+  media_item_id        String    @unique
+  orden                Int       // Posición secuencial (1, 2, 3...) para exportación 001_foto.jpg
+  duracion_display_seg Int       @default(4) // 4 seg por defecto para fotos, duración del clip para videos
+  transicion           String    @default("CROSSFADE") // 'CROSSFADE' | 'KEN_BURNS' | 'CORTE_SUAVE'
+  notas_editor         String?
+  updated_at           DateTime  @updatedAt
+
+  // Relaciones
+  media_item           MediaItem @relation(fields: [media_item_id], references: [id], onDelete: Cascade)
+
+  @@index([orden])
+}
+
+// 4. Configuración Global del Sistema y Máquina de Estados del Evento
+model SystemConfig {
+  id                       Int      @id @default(1)
+  nombre_generacion        String   @default("Generación 2022 - 2026")
+  titulo_evento            String   @default("Gala de Graduación Universitaria")
+  subtitulo_evento         String   @default("Noche de Gala y Memoria Colectiva")
+  fase_actual              String   @default("PRE_EVENTO") // 'PRE_EVENTO' | 'EN_VIVO' | 'MEMORIA'
+  subidas_abiertas         Boolean  @default(true)
+  moderacion_automatica_qr Boolean  @default(false)
+  duracion_foto_ensayo_seg Int      @default(4)
+  url_video_oficial        String?
+  codigo_acceso_salon      String   @default("GALA2026")
+  updated_at               DateTime @updatedAt
+}
+
