@@ -21,9 +21,9 @@ interface HeroBannerProps {
 const MARQUEE_ITEMS = [
   { text: 'Graduación TECNM', accent: 'gold' },
   { text: 'Generación 2022 – 2026', accent: 'silver' },
-  { text: 'Gala · La Noche Estrellada', accent: 'gold' },
+  { text: 'Donde termina el aula y comienza nuestra historia', accent: 'gold' },
   { text: 'Tecnológico Nacional de México', accent: 'silver' },
-  { text: 'Una Noche Bajo las Estrellas', accent: 'gold' },
+  { text: 'El inicio de nuestra historia', accent: 'gold' },
   { text: 'Recuerdos para Siempre', accent: 'silver' },
 ] as const;
 
@@ -77,7 +77,7 @@ export const Seal: React.FC<{ className?: string }> = ({ className = '' }) => (
       </defs>
       <text
         fill="url(#seal-grad)"
-        fontSize="12.5"
+        fontSize="11.2"
         fontFamily="Cinzel, serif"
         fontWeight="600"
       >
@@ -86,7 +86,7 @@ export const Seal: React.FC<{ className?: string }> = ({ className = '' }) => (
           textLength="498"
           lengthAdjust="spacing"
         >
-          TECNM · GENERACIÓN 2022 – 2026 · NOCHE ESTRELLADA ·
+          TECNM · 2022 – 2026 · EL INICIO DE NUESTRA HISTORIA ·
         </textPath>
       </text>
     </svg>
@@ -151,19 +151,20 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({
         className="glass rounded-2xl overflow-hidden mb-6"
       >
         <StarryMarqueeCarousel />
-        <div className="px-5 py-3 flex items-center justify-between gap-3 text-xs text-gala-parchment border-t border-gala-silver/15">
-          <div className="flex items-center gap-2.5 min-w-0">
+        <div className="px-4 sm:px-5 py-3 flex flex-col sm:flex-row items-center justify-between gap-1.5 sm:gap-3 text-xs text-gala-parchment border-t border-gala-silver/15 text-center sm:text-left">
+          <div className="flex items-center justify-center sm:justify-start gap-2 min-w-0">
             <span className="w-2 h-2 rounded-full bg-gala-leaf animate-pulse shrink-0" />
-            <span className="uppercase tracking-[0.18em] text-gala-champagne font-semibold shrink-0">
+            <span className="uppercase tracking-[0.14em] sm:tracking-[0.18em] text-[11px] text-gala-champagne font-semibold">
               {phase.badge}
             </span>
-            <span className="hidden sm:inline text-gala-silver/50">·</span>
-            <span className="hidden sm:inline truncate text-gala-silver">
+            <span className="hidden md:inline text-gala-silver/50">·</span>
+            <span className="hidden md:inline truncate text-gala-silver">
               {phase.title}
             </span>
           </div>
-          <span className="text-[10px] uppercase tracking-[0.2em] text-gala-silver/75 font-mono shrink-0">
-            Noche Estrellada
+          <span className="text-[11px] font-serif italic tracking-wide text-gala-silver/85 flex items-center gap-1.5">
+            <Sparkles className="w-3 h-3 text-gala-gold shrink-0" />
+            <span>Donde termina el aula y comienza nuestra historia</span>
           </span>
         </div>
       </motion.section>
@@ -181,10 +182,10 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({
           {/* Nebulosa luminosa azul, plata y oro detrás del título */}
           <div className="absolute left-1/2 top-1/3 -translate-x-1/2 -translate-y-1/2 w-[85%] h-64 rounded-full bg-gradient-to-r from-gala-royal/25 via-gala-silver/15 to-gala-gold/20 blur-3xl pointer-events-none" />
 
-          {/* Distintivo superior de temática */}
-          <div className="relative mb-4 inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-gala-surface/80 border border-gala-silver/30 text-[10px] uppercase tracking-[0.24em] text-gala-silver">
-            <Sparkles className="w-3 h-3 text-gala-gold" />
-            <span>Gala · La Noche Estrellada</span>
+          {/* Distintivo superior con la frase de graduación */}
+          <div className="relative mb-4 inline-flex items-center justify-center gap-2 px-3.5 py-1.5 rounded-full bg-gala-surface/80 border border-gala-silver/30 text-[10px] sm:text-[11px] uppercase tracking-[0.1em] sm:tracking-[0.18em] text-gala-silver max-w-full">
+            <Sparkles className="w-3 h-3 text-gala-gold shrink-0" />
+            <span className="leading-snug">Donde termina el aula y comienza nuestra historia</span>
           </div>
 
           <Seal className="relative w-28 h-28 sm:w-36 sm:h-36 mb-5" />

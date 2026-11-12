@@ -43,8 +43,13 @@ export const PartyDaySection: React.FC<PartyDaySectionProps> = ({
   onOpenFullCarousel,
   onRefresh,
 }) => {
-  // En Día de la Fiesta se muestran EXCLUSIVAMENTE las fotos y videos cuyo estatus actual es "APROBADO_GALERIA" ("Día de la Fiesta")
-  const partyPhotos = items.filter((i) => i.estado === 'APROBADO_GALERIA');
+  // En Día de la Fiesta se muestran las fotos de la fiesta en orden cronológico: de la más antigua (primera) a la más reciente
+  const partyPhotos = items
+    .filter((i) => i.estado === 'APROBADO_GALERIA')
+    .sort(
+      (a, b) =>
+        new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+    );
 
   // Modo de vista dentro de "Día de la Fiesta": 'ONE_BY_ONE' (Una por una) o 'GRID' (Todas paginadas)
   const [viewMode, setViewMode] = useState<'ONE_BY_ONE' | 'GRID'>('ONE_BY_ONE');
@@ -83,7 +88,7 @@ export const PartyDaySection: React.FC<PartyDaySectionProps> = ({
       .then((res) =>
         setMyLiveUploads(res.items.filter((i) => i.origen === 'EN_VIVO'))
       )
-      .catch(() => {});
+      .catch(() => { });
   };
 
   useEffect(() => {
@@ -161,8 +166,11 @@ export const PartyDaySection: React.FC<PartyDaySectionProps> = ({
       setSelectedFile(null);
       setPreviewUrl(null);
       setShowUploadBox(false);
+      const isAutoMod = Boolean(config?.moderacion_automatica_qr);
       setBannerMsg(
-        'Foto enviada desde tu mesa. En cuanto las organizadoras la aprueben aparecerá aquí y en el carrusel.'
+        isAutoMod
+          ? '¡Foto publicada al instante! Ya está disponible en el carrusel y en la pantalla gigante.'
+          : 'Foto enviada desde tu mesa. En cuanto las organizadoras la aprueben aparecerá aquí y en el carrusel.'
       );
       loadMyLiveUploads();
       onRefresh();
@@ -171,6 +179,17 @@ export const PartyDaySection: React.FC<PartyDaySectionProps> = ({
       setUploadError(err.message || 'Error al subir la foto.');
     } finally {
       setUploading(false);
+    }
+  };
+
+  const handleQuickDiscard = async (mediaId: string) => {
+    try {
+      await api.moderateMedia(mediaId, 'RECHAZADO', false);
+      setBannerMsg('La fotografía fue retirada de la pantalla gigante.');
+      onRefresh();
+      setTimeout(() => setBannerMsg(null), 4000);
+    } catch {
+      setBannerMsg('No se pudo retirar la fotografía.');
     }
   };
 
@@ -207,7 +226,7 @@ export const PartyDaySection: React.FC<PartyDaySectionProps> = ({
           <div className="space-y-1.5">
             <span className="text-[11px] uppercase tracking-[0.25em] text-gala-gold font-semibold inline-flex items-center gap-1.5">
               <Sparkles className="w-3.5 h-3.5 text-gala-silver" />
-              Apartado 2 · Noche Estrellada en Vivo
+              Apartado 2 · El inicio de nuestra historia · En Vivo
             </span>
             <h2 className="font-serif text-3xl sm:text-4xl text-gala-ivory">
               Día de la Fiesta · Fotos en Momento Real
@@ -245,8 +264,8 @@ export const PartyDaySection: React.FC<PartyDaySectionProps> = ({
                   {showUploadBox
                     ? 'Cerrar Cámara'
                     : faseActual === 'MEMORIA' && isAdmin
-                    ? 'Subir Foto de la Fiesta (Admin)'
-                    : 'Subir Foto de la Fiesta'}
+                      ? 'Subir Foto de la Fiesta (Admin)'
+                      : 'Subir Foto de la Fiesta'}
                 </span>
               </button>
             ) : (
@@ -362,6 +381,19 @@ export const PartyDaySection: React.FC<PartyDaySectionProps> = ({
                 />
               </div>
 
+              {/* Aviso disuasorio de no-anonimato */}
+              <div className="p-3.5 rounded-xl bg-gala-obsidian/95 border border-gala-gold/30 text-xs text-gala-silver space-y-1">
+                <div className="font-semibold text-gala-champagne flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-gala-gold" />
+                  <span>Proyección con Identidad Verificada</span>
+                </div>
+                <p className="leading-relaxed">
+                  Tu foto se proyectará en la pantalla gigante del salón identificada con tu nombre (
+                  <strong className="text-gala-ivory">{currentUser?.nombre_completo}</strong>) y tu mesa (
+                  <strong className="text-gala-champagne">{currentUser?.mesa || 'Invitado'}</strong>). Por favor cuida el respeto hacia tus compañeros y el evento.
+                </p>
+              </div>
+
               {uploadError && (
                 <div className="p-3 rounded-xl bg-red-950/60 border border-red-500/40 text-xs text-red-200 flex items-center gap-2">
                   <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
@@ -387,24 +419,22 @@ export const PartyDaySection: React.FC<PartyDaySectionProps> = ({
           <button
             type="button"
             onClick={() => setViewMode('ONE_BY_ONE')}
-            className={`px-4 py-2 rounded-lg text-xs font-medium flex items-center gap-2 transition ${
-              viewMode === 'ONE_BY_ONE'
-                ? 'btn-gold text-gala-obsidian font-semibold'
-                : 'text-gala-silver hover:text-gala-ivory'
-            }`}
+            className={`px-4 py-2 rounded-lg text-xs font-medium flex items-center gap-2 transition ${viewMode === 'ONE_BY_ONE'
+              ? 'btn-gold text-gala-obsidian font-semibold'
+              : 'text-gala-silver hover:text-gala-ivory'
+              }`}
           >
             <Eye className="w-3.5 h-3.5" /> Ver Fotos Una por Una ({partyPhotos.length})
           </button>
           <button
             type="button"
             onClick={() => setViewMode('GRID')}
-            className={`px-4 py-2 rounded-lg text-xs font-medium flex items-center gap-2 transition ${
-              viewMode === 'GRID'
-                ? 'btn-gold text-gala-obsidian font-semibold'
-                : 'text-gala-silver hover:text-gala-ivory'
-            }`}
+            className={`px-4 py-2 rounded-lg text-xs font-medium flex items-center gap-2 transition ${viewMode === 'GRID'
+              ? 'btn-gold text-gala-obsidian font-semibold'
+              : 'text-gala-silver hover:text-gala-ivory'
+              }`}
           >
-            <LayoutGrid className="w-3.5 h-3.5" /> Ver Todas Paginadas
+            <LayoutGrid className="w-3.5 h-3.5" /> Ver Todas las Fotos
           </button>
         </div>
 
@@ -412,11 +442,10 @@ export const PartyDaySection: React.FC<PartyDaySectionProps> = ({
           <button
             type="button"
             onClick={() => setAutoPlayInline((prev) => !prev)}
-            className={`px-4 py-2 rounded-xl text-xs font-medium border flex items-center gap-2 transition ${
-              autoPlayInline
-                ? 'bg-gala-gold/20 border-gala-gold text-gala-champagne'
-                : 'btn-silver text-gala-silver'
-            }`}
+            className={`px-4 py-2 rounded-xl text-xs font-medium border flex items-center gap-2 transition ${autoPlayInline
+              ? 'bg-gala-gold/20 border-gala-gold text-gala-champagne'
+              : 'btn-silver text-gala-silver'
+              }`}
           >
             {autoPlayInline ? (
               <>
@@ -528,6 +557,18 @@ export const PartyDaySection: React.FC<PartyDaySectionProps> = ({
               >
                 <Download className="w-4 h-4" />
               </a>
+
+              {isAdmin && (
+                <button
+                  type="button"
+                  onClick={() => handleQuickDiscard(currentPhoto.id)}
+                  className="px-3.5 py-3 rounded-xl bg-red-950/80 hover:bg-red-900 border border-red-500/50 text-red-200 text-xs font-semibold flex items-center gap-1.5 transition"
+                  title="Retirar foto inmediatamente del carrusel y proyector"
+                >
+                  <Trash2 className="w-4 h-4 text-red-400" />
+                  <span className="hidden sm:inline">Quitar de Pantalla</span>
+                </button>
+              )}
             </div>
           </div>
 
@@ -538,11 +579,10 @@ export const PartyDaySection: React.FC<PartyDaySectionProps> = ({
                 key={thumb.id}
                 type="button"
                 onClick={() => setCurrentPhotoIdx(idx)}
-                className={`relative w-24 h-16 rounded-lg overflow-hidden border shrink-0 transition ${
-                  currentPhotoIdx === idx
-                    ? 'border-2 border-gala-gold scale-105'
-                    : 'border-gala-silver/20 opacity-60 hover:opacity-100'
-                }`}
+                className={`relative w-24 h-16 rounded-lg overflow-hidden border shrink-0 transition ${currentPhotoIdx === idx
+                  ? 'border-2 border-gala-gold scale-105'
+                  : 'border-gala-silver/20 opacity-60 hover:opacity-100'
+                  }`}
               >
                 <img
                   src={thumb.archivo_url}
@@ -593,7 +633,7 @@ export const PartyDaySection: React.FC<PartyDaySectionProps> = ({
                       </p>
                     </div>
                   </div>
-                  <div className="px-4 py-3 bg-gala-obsidian/85 border-t border-gala-silver/15 flex items-center justify-between">
+                  <div className="px-4 py-3 bg-gala-obsidian/85 border-t border-gala-silver/15 flex items-center justify-between gap-2">
                     <button
                       type="button"
                       onClick={() => {
@@ -604,13 +644,25 @@ export const PartyDaySection: React.FC<PartyDaySectionProps> = ({
                     >
                       <Eye className="w-3.5 h-3.5 text-gala-gold" /> Ver en grande
                     </button>
-                    <a
-                      href={item.archivo_url}
-                      download
-                      className="px-3 py-1.5 rounded-lg bg-gala-gold/15 hover:bg-gala-gold text-gala-champagne hover:text-gala-obsidian text-xs font-medium flex items-center gap-1 transition"
-                    >
-                      <Download className="w-3.5 h-3.5" /> Descargar
-                    </a>
+                    <div className="flex items-center gap-1.5">
+                      <a
+                        href={item.archivo_url}
+                        download
+                        className="px-3 py-1.5 rounded-lg bg-gala-gold/15 hover:bg-gala-gold text-gala-champagne hover:text-gala-obsidian text-xs font-medium flex items-center gap-1 transition"
+                      >
+                        <Download className="w-3.5 h-3.5" /> Descargar
+                      </a>
+                      {isAdmin && (
+                        <button
+                          type="button"
+                          onClick={() => handleQuickDiscard(item.id)}
+                          className="p-1.5 rounded-lg bg-red-950/70 hover:bg-red-900 border border-red-500/40 text-red-300"
+                          title="Quitar foto de pantalla"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
               );

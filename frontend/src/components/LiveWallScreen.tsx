@@ -84,9 +84,13 @@ export const LiveWallScreen: React.FC<LiveWallScreenProps> = ({ onExit }) => {
       setConfig(res.config);
       setBackendConnected(true);
 
-      const partyItems = res.items.filter(
-        (i) => i.estado === 'APROBADO_GALERIA'
-      );
+      // EXCLUSIVAMENTE fotos aprobadas en "Día de la Fiesta", ordenadas de la más antigua a la más reciente (cronológico)
+      const partyItems = res.items
+        .filter((i) => i.estado === 'APROBADO_GALERIA')
+        .sort(
+          (a, b) =>
+            new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+        );
 
       setItems(partyItems);
       localStorage.setItem(OFFLINE_CACHE_KEY, JSON.stringify(partyItems));
@@ -192,7 +196,7 @@ export const LiveWallScreen: React.FC<LiveWallScreenProps> = ({ onExit }) => {
             <div className="min-w-0">
               <div className="text-[10px] sm:text-[11px] uppercase tracking-[0.22em] text-gala-gold flex items-center gap-1.5 truncate">
                 <Sparkles className="w-3 h-3 text-gala-silver shrink-0" />
-                <span>Carrusel en Vivo · La Noche Estrellada</span>
+                <span>Carrusel en Vivo · Donde termina el aula y comienza nuestra historia</span>
               </div>
               <h1 className="font-serif text-lg sm:text-2xl text-gala-ivory truncate">
                 {config?.titulo_evento || 'Graduación TECNM'}

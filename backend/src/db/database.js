@@ -162,7 +162,7 @@ function ensureSampleArtworkFile(filename, title, subtitle, stageTag, palette) {
     <text x="800" y="675" text-anchor="middle" fill="#F8FAFC" font-family="Georgia, serif" font-size="60" font-style="italic">${title}</text>
     <text x="800" y="742" text-anchor="middle" fill="${silver}" font-family="sans-serif" font-size="26" letter-spacing="2">${subtitle}</text>
     <line x1="650" y1="802" x2="950" y2="802" stroke="url(#goldSilver)" stroke-opacity="0.65" stroke-width="1.8" />
-    <text x="800" y="855" text-anchor="middle" fill="${palette.accent}" font-family="Cinzel, Georgia, serif" font-size="20" letter-spacing="6">GRADUACIÓN TECNM · NOCHE ESTRELLADA 2022 – 2026</text>
+    <text x="800" y="855" text-anchor="middle" fill="${palette.accent}" font-family="Cinzel, Georgia, serif" font-size="19" letter-spacing="5">DONDE TERMINA EL AULA Y COMIENZA NUESTRA HISTORIA · 2022 – 2026</text>
   </svg>`;
 
   fs.writeFileSync(filePath, svg, 'utf8');
@@ -376,7 +376,7 @@ function seedInitialData() {
       tipo_medio: 'FOTO',
       filename: 'sample_04_en_vivo_brindis.svg',
       title: 'Brindis de Gala · Mesa 09',
-      subtitle: 'En Vivo bajo la Noche Estrellada · Salón Principal',
+      subtitle: 'En Vivo · Donde termina el aula y comienza nuestra historia',
       stageTag: 'DÍA DE LA FIESTA · EN VIVO',
       palette: { bg1: '#04091D', bg2: '#102458', bg3: '#030610', accent: '#F6E2A8', silver: '#E2E8F0', nebula: '#3B82F6' },
       orden: null,

@@ -107,7 +107,7 @@ export const PhotographerSection: React.FC<PhotographerSectionProps> = ({
             Álbum del Fotógrafo Oficial
           </h2>
           <p className="text-xs sm:text-sm text-gala-parchment/90 mt-1 max-w-2xl">
-            Fotografías profesionales de estudio y cobertura oficial de la Noche Estrellada listas para descargar en calidad original.
+            Fotografías profesionales de estudio y cobertura oficial donde termina el aula y comienza nuestra historia, listas para descargar en calidad original.
           </p>
         </div>
 

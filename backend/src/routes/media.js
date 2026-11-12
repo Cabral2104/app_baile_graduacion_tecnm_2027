@@ -198,7 +198,7 @@ router.get('/public', (req, res) => {
       AND m.solicitud_retiro = 0
     ORDER BY
       CASE WHEN s.orden IS NULL THEN 999999 ELSE s.orden END ASC,
-      m.created_at DESC
+      m.created_at ASC
   `).all();
 
   const counts = {

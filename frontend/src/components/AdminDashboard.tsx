@@ -295,6 +295,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
+  const handleToggleAutoModeration = async (enabled: boolean) => {
+    try {
+      const res = await api.updateConfig({
+        moderacion_automatica_qr: enabled,
+      });
+      showToast(res.message);
+      await fetchOverview();
+      onConfigChanged();
+    } catch (err: any) {
+      showToast(err.message || 'Error al actualizar la moderación de la fiesta.');
+    }
+  };
+
   if (loading || !data) {
     return (
       <div className="py-16 text-center text-sm text-gala-parchment">
@@ -349,7 +362,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       <div className="p-6 rounded-2xl glass">
         <span className="text-[11px] uppercase tracking-[0.25em] text-gala-gold font-semibold inline-flex items-center gap-1.5">
           <Sparkles className="w-3.5 h-3.5 text-gala-silver" />
-          Exclusivo para Organizadoras · La Noche Estrellada
+          Exclusivo para Organizadoras · El inicio de nuestra historia
         </span>
         <h2 className="font-serif text-3xl text-gala-ivory mt-1">
           Centro de Control de la Graduación
@@ -718,6 +731,49 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               );
             })}
           </div>
+
+          {/* Interruptor de Publicación Automática en Fiesta */}
+          <div className="pt-6 border-t border-gala-silver/15 space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-xl bg-gala-obsidian/85 border border-gala-silver/20">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="font-serif text-lg text-gala-ivory">
+                    Publicación Directa en la Fiesta (Sin revisión previa)
+                  </span>
+                  <span
+                    className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase ${
+                      data.config.moderacion_automatica_qr
+                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                        : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                    }`}
+                  >
+                    {data.config.moderacion_automatica_qr ? 'Activada' : 'Desactivada'}
+                  </span>
+                </div>
+                <p className="text-xs text-gala-parchment/80 max-w-xl">
+                  {data.config.moderacion_automatica_qr
+                    ? 'Recomendado para la noche del evento: las fotos que suban los invitados entran de inmediato al carrusel y al proyector sin que las organizadoras tengan que autorizarlas una por una.'
+                    : 'Modo seguro: cada foto de la fiesta queda pendiente hasta que una organizadora la autorice desde la pestaña 1.'}
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() =>
+                  handleToggleAutoModeration(!data.config.moderacion_automatica_qr)
+                }
+                className={`px-5 py-2.5 rounded-xl text-xs font-semibold shrink-0 transition shadow ${
+                  data.config.moderacion_automatica_qr
+                    ? 'btn-silver text-gala-ivory'
+                    : 'btn-gold text-gala-obsidian'
+                }`}
+              >
+                {data.config.moderacion_automatica_qr
+                  ? 'Desactivar Publicación Directa'
+                  : 'Activar Publicación Directa'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -938,6 +994,49 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </button>
               );
             })}
+          </div>
+
+          {/* Interruptor de Publicación Automática en Fiesta */}
+          <div className="pt-6 border-t border-gala-silver/15 space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-xl bg-gala-obsidian/85 border border-gala-silver/20">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="font-serif text-lg text-gala-ivory">
+                    Publicación Directa en la Fiesta (Sin revisión previa)
+                  </span>
+                  <span
+                    className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase ${
+                      data.config.moderacion_automatica_qr
+                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                        : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                    }`}
+                  >
+                    {data.config.moderacion_automatica_qr ? 'Activada' : 'Desactivada'}
+                  </span>
+                </div>
+                <p className="text-xs text-gala-parchment/80 max-w-xl">
+                  {data.config.moderacion_automatica_qr
+                    ? 'Recomendado para la noche del evento: las fotos que suban los invitados entran de inmediato al carrusel y al proyector sin que las organizadoras tengan que autorizarlas una por una.'
+                    : 'Modo seguro: cada foto de la fiesta queda pendiente hasta que una organizadora la autorice desde la pestaña 1.'}
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() =>
+                  handleToggleAutoModeration(!data.config.moderacion_automatica_qr)
+                }
+                className={`px-5 py-2.5 rounded-xl text-xs font-semibold shrink-0 transition shadow ${
+                  data.config.moderacion_automatica_qr
+                    ? 'btn-silver text-gala-ivory'
+                    : 'btn-gold text-gala-obsidian'
+                }`}
+              >
+                {data.config.moderacion_automatica_qr
+                  ? 'Desactivar Publicación Directa'
+                  : 'Activar Publicación Directa'}
+              </button>
+            </div>
           </div>
         </div>
       )}
