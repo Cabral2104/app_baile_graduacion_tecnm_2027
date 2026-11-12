@@ -35,7 +35,10 @@ router.get('/overview', requireAdmin, (_req, res) => {
       mod.nombre_completo as moderador_nombre,
       s.orden as storyboard_orden,
       s.duracion_display_seg,
-      s.transicion
+      s.transicion,
+      COALESCE((SELECT COUNT(*) FROM MediaReaction r WHERE r.media_item_id = m.id AND r.tipo = 'CORAZON'), 0) as reacciones_corazon,
+      COALESCE((SELECT COUNT(*) FROM MediaReaction r WHERE r.media_item_id = m.id AND r.tipo = 'ESTRELLA'), 0) as reacciones_estrella,
+      COALESCE((SELECT COUNT(*) FROM MediaReaction r WHERE r.media_item_id = m.id), 0) as reacciones_total
     FROM MediaItem m
     JOIN User u ON u.id = m.usuario_id
     LEFT JOIN User mod ON mod.id = m.moderado_por_id

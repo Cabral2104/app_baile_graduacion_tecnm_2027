@@ -10,6 +10,7 @@ import {
   AlertCircle,
   RefreshCw,
   GraduationCap,
+  QrCode,
 } from 'lucide-react';
 import { User, MediaItem, SystemConfig } from './types';
 import {
@@ -94,6 +95,30 @@ export const App: React.FC = () => {
     return 'MODO_MEMORIA';
   });
 
+  // Detección automática de Mesa escaneada por código QR (?mesa=Mesa+04)
+  const [scannedMesa, setScannedMesa] = useState<string | null>(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const m = params.get('mesa');
+      if (m) {
+        localStorage.setItem('gala_guest_mesa', m);
+        return m;
+      }
+      return localStorage.getItem('gala_guest_mesa');
+    }
+    return null;
+  });
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const mesaParam = params.get('mesa');
+    if (mesaParam) {
+      setScannedMesa(mesaParam);
+      localStorage.setItem('gala_guest_mesa', mesaParam);
+      setActiveView('DIA_DE_LA_FIESTA');
+    }
+  }, []);
+
   useEffect(() => {
     localStorage.removeItem('gala_livewall_offline_cache_v1');
   }, []);
@@ -141,6 +166,27 @@ export const App: React.FC = () => {
     eventSource.addEventListener('MEDIA_MODERATED', () => fetchPublicState());
     eventSource.addEventListener('SEQUENCE_UPDATED', () => fetchPublicState());
     eventSource.addEventListener('CONFIG_UPDATED', () => fetchPublicState());
+    eventSource.addEventListener('REACTION', (e) => {
+      try {
+        const payload = JSON.parse(e.data)?.payload;
+        if (payload?.media_id && payload?.counts) {
+          setPublicItems((prev) =>
+            prev.map((item) =>
+              item.id === payload.media_id
+                ? {
+                    ...item,
+                    reacciones_corazon: payload.counts.corazon,
+                    reacciones_estrella: payload.counts.estrella,
+                    reacciones_total: payload.counts.total,
+                  }
+                : item
+            )
+          );
+        }
+      } catch {
+        // Ignorar error de parsing
+      }
+    });
 
     const syncTimer = setInterval(fetchPublicState, 15000);
 
@@ -203,6 +249,27 @@ export const App: React.FC = () => {
             className="px-2.5 py-1 rounded-lg bg-gala-rose/20 hover:bg-gala-rose/30 font-medium flex items-center gap-1"
           >
             <RefreshCw className="w-3 h-3" /> Reintentar
+          </button>
+        </div>
+      )}
+
+      {/* Banner de Mesa Detectada por Escaneo de Código QR */}
+      {scannedMesa && (
+        <div className="bg-gradient-to-r from-amber-950/80 via-gala-surface to-amber-950/80 border-b border-gala-gold/40 px-4 py-2 text-center text-xs text-gala-ivory shadow-lg flex items-center justify-center gap-2 relative z-30">
+          <QrCode className="w-4 h-4 text-gala-gold shrink-0" />
+          <span>
+            Bienvenido(a) a la <strong className="text-gala-champagne font-bold">{scannedMesa}</strong>. Todas las fotos que subas se proyectarán con el distintivo de tu mesa.
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              setScannedMesa(null);
+              localStorage.removeItem('gala_guest_mesa');
+            }}
+            className="text-[10px] text-gala-muted hover:text-gala-ivory underline ml-2 cursor-pointer"
+            title="Cambiar de mesa"
+          >
+            Cambiar
           </button>
         </div>
       )}

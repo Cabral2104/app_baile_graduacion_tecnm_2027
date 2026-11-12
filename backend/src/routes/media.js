@@ -4,7 +4,28 @@ const crypto = require('node:crypto');
 const multer = require('multer');
 const { db, STORAGE_UPLOADS_DIR } = require('../db/database');
 const { requireAuth } = require('./auth');
+const { verifyToken } = require('../utils/security');
 const { broadcastEvent } = require('../realtime/liveHub');
+
+function optionalAuth(req, _res, next) {
+  const authHeader = req.headers.authorization || '';
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  if (!token) {
+    req.user = null;
+    return next();
+  }
+  const payload = verifyToken(token);
+  if (!payload || !payload.id) {
+    req.user = null;
+    return next();
+  }
+  const user = db.prepare(`
+    SELECT id, nombre_completo, distintivo_homonimo, mesa, rol
+    FROM User WHERE id = ? AND activo = 1
+  `).get(payload.id);
+  req.user = user || null;
+  next();
+}
 
 const router = express.Router();
 
@@ -179,8 +200,10 @@ router.post('/upload', requireAuth, upload.single('archivo'), (req, res) => {
  * Día de la Fiesta (APROBADO_GALERIA) y Álbum Fotógrafo (APROBADO_FOTOGRAFO).
  * Soporta filtrado opcional (?estado=...&etapa=...) y paginación (?page=1&limit=6).
  */
-router.get('/public', (req, res) => {
+router.get('/public', optionalAuth, (req, res) => {
   const { estado, etapa, page, limit } = req.query || {};
+  const userId = req.user?.id || null;
+  const visitorId = String(req.query.visitor_id || req.headers['x-visitor-id'] || '').trim() || null;
 
   const allItems = db.prepare(`
     SELECT
@@ -190,7 +213,18 @@ router.get('/public', (req, res) => {
       u.mesa as autor_mesa,
       s.orden as storyboard_orden,
       s.duracion_display_seg,
-      s.transicion
+      s.transicion,
+      COALESCE((SELECT COUNT(*) FROM MediaReaction r WHERE r.media_item_id = m.id AND r.tipo = 'CORAZON'), 0) as reacciones_corazon,
+      COALESCE((SELECT COUNT(*) FROM MediaReaction r WHERE r.media_item_id = m.id AND r.tipo = 'ESTRELLA'), 0) as reacciones_estrella,
+      COALESCE((SELECT COUNT(*) FROM MediaReaction r WHERE r.media_item_id = m.id), 0) as reacciones_total,
+      (
+        SELECT tipo FROM MediaReaction r
+        WHERE r.media_item_id = m.id AND (
+          (? IS NOT NULL AND r.usuario_id = ?) OR
+          (? IS NOT NULL AND r.visitor_id = ?)
+        )
+        LIMIT 1
+      ) as mi_reaccion
     FROM MediaItem m
     JOIN User u ON u.id = m.usuario_id
     LEFT JOIN SequenceOrder s ON s.media_item_id = m.id
@@ -199,7 +233,7 @@ router.get('/public', (req, res) => {
     ORDER BY
       CASE WHEN s.orden IS NULL THEN 999999 ELSE s.orden END ASC,
       m.created_at ASC
-  `).all();
+  `).all(userId, userId, visitorId, visitorId);
 
   const counts = {
     APROBADO_VIDEO: allItems.filter((i) => i.estado === 'APROBADO_VIDEO').length,
@@ -283,6 +317,104 @@ router.post('/:id/request-takedown', (req, res) => {
 
   return res.json({
     message: 'La fotografía ha sido ocultada de la galería pública para revisión del comité.',
+  });
+});
+
+/**
+ * Reacción en tiempo real (Corazón o Estrella) para fotos del evento.
+ * POST /api/media/:id/react
+ * Body opcional: { tipo: 'CORAZON' | 'ESTRELLA' }
+ */
+router.post('/:id/react', optionalAuth, (req, res) => {
+  const { id } = req.params;
+  const { tipo, visitor_id } = req.body || {};
+  const safeTipo = tipo === 'ESTRELLA' ? 'ESTRELLA' : 'CORAZON';
+
+  const existing = db.prepare('SELECT id, pie_de_foto FROM MediaItem WHERE id = ?').get(id);
+  if (!existing) {
+    return res.status(404).json({ error: 'Elemento multimedia no encontrado.' });
+  }
+
+  const userId = req.user?.id || null;
+  const visitorId = String(visitor_id || req.headers['x-visitor-id'] || '').trim() || null;
+
+  // Límite de 1 reacción por persona por foto (evita spam):
+  // Si ya reaccionó con el mismo tipo -> se elimina (unreact/toggle)
+  // Si reaccionó con otro tipo -> se reemplaza
+  // Si no había reaccionado -> se inserta nueva
+  let existingReaction = null;
+  if (userId) {
+    existingReaction = db.prepare(`
+      SELECT id, tipo FROM MediaReaction
+      WHERE media_item_id = ? AND usuario_id = ?
+    `).get(id, userId);
+  } else if (visitorId) {
+    existingReaction = db.prepare(`
+      SELECT id, tipo FROM MediaReaction
+      WHERE media_item_id = ? AND visitor_id = ?
+    `).get(id, visitorId);
+  }
+
+  const now = new Date().toISOString();
+  let action = 'ADDED';
+  let activeUserReaction = safeTipo;
+
+  if (existingReaction) {
+    if (existingReaction.tipo === safeTipo) {
+      // Quitar reacción (Toggle off)
+      db.prepare('DELETE FROM MediaReaction WHERE id = ?').run(existingReaction.id);
+      action = 'REMOVED';
+      activeUserReaction = null;
+    } else {
+      // Cambiar reacción (ej. de Estrella a Corazón o viceversa)
+      db.prepare('UPDATE MediaReaction SET tipo = ?, created_at = ? WHERE id = ?').run(
+        safeTipo,
+        now,
+        existingReaction.id
+      );
+      action = 'CHANGED';
+      activeUserReaction = safeTipo;
+    }
+  } else {
+    // Nueva reacción (primera vez)
+    const reactionId = `react-${crypto.randomUUID().slice(0, 12)}`;
+    db.prepare(`
+      INSERT INTO MediaReaction (id, media_item_id, usuario_id, visitor_id, tipo, created_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(reactionId, id, userId, visitorId, safeTipo, now);
+    action = 'ADDED';
+    activeUserReaction = safeTipo;
+  }
+
+  const stats = db.prepare(`
+    SELECT
+      COUNT(*) as total,
+      SUM(CASE WHEN tipo = 'CORAZON' THEN 1 ELSE 0 END) as corazon,
+      SUM(CASE WHEN tipo = 'ESTRELLA' THEN 1 ELSE 0 END) as estrella
+    FROM MediaReaction
+    WHERE media_item_id = ?
+  `).get(id);
+
+  const responseCounts = {
+    total: Number(stats?.total || 0),
+    corazon: Number(stats?.corazon || 0),
+    estrella: Number(stats?.estrella || 0),
+  };
+
+  broadcastEvent('REACTION', {
+    media_id: id,
+    tipo: safeTipo,
+    action,
+    mesa: req.user?.mesa || 'Invitado',
+    autor_nombre: req.user?.nombre_completo || 'Invitado',
+    counts: responseCounts,
+  });
+
+  return res.json({
+    success: true,
+    action,
+    user_reaction: activeUserReaction,
+    counts: responseCounts,
   });
 });
 

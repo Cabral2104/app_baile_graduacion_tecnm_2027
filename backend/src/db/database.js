@@ -87,7 +87,34 @@ function initializeSchema() {
       codigo_acceso_salon TEXT NOT NULL DEFAULT 'GALA2026',
       updated_at TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS MediaReaction (
+      id TEXT PRIMARY KEY,
+      media_item_id TEXT NOT NULL,
+      usuario_id TEXT,
+      visitor_id TEXT,
+      tipo TEXT NOT NULL DEFAULT 'CORAZON',
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (media_item_id) REFERENCES MediaItem(id) ON DELETE CASCADE,
+      FOREIGN KEY (usuario_id) REFERENCES User(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_reaction_media ON MediaReaction(media_item_id);
+    CREATE INDEX IF NOT EXISTS idx_reaction_tipo ON MediaReaction(tipo);
+    CREATE INDEX IF NOT EXISTS idx_reaction_user ON MediaReaction(usuario_id);
   `);
+
+  try {
+    db.exec('ALTER TABLE MediaReaction ADD COLUMN visitor_id TEXT;');
+  } catch {
+    // Columna ya existente
+  }
+
+  try {
+    db.exec('CREATE INDEX IF NOT EXISTS idx_reaction_visitor ON MediaReaction(visitor_id);');
+  } catch {
+    // Ignorar si ya existe
+  }
 }
 
 function ensureSampleArtworkFile(filename, title, subtitle, stageTag, palette) {

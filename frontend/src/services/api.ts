@@ -9,9 +9,19 @@ import {
 
 const TOKEN_STORAGE_KEY = 'gala_graduacion_jwt_token_v1';
 const USER_STORAGE_KEY = 'gala_graduacion_user_v1';
+const VISITOR_ID_KEY = 'gala_visitor_device_id_v1';
 
 export function getStoredToken(): string | null {
   return localStorage.getItem(TOKEN_STORAGE_KEY);
+}
+
+export function getVisitorId(): string {
+  let vid = localStorage.getItem(VISITOR_ID_KEY);
+  if (!vid) {
+    vid = 'vis-' + Math.random().toString(36).substring(2, 10) + '-' + Date.now().toString(36);
+    localStorage.setItem(VISITOR_ID_KEY, vid);
+  }
+  return vid;
 }
 
 export function getStoredUser(): User | null {
@@ -35,6 +45,7 @@ export function clearSession(): void {
 
 async function requestJson<T>(url: string, options: RequestInit = {}): Promise<T> {
   const token = getStoredToken();
+  const visitorId = getVisitorId();
   const headers: Record<string, string> = {
     ...(options.headers as Record<string, string>),
   };
@@ -45,6 +56,9 @@ async function requestJson<T>(url: string, options: RequestInit = {}): Promise<T
 
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
+  }
+  if (visitorId) {
+    headers['X-Visitor-Id'] = visitorId;
   }
 
   const res = await fetch(url, {
@@ -79,6 +93,17 @@ export const api = {
       body: JSON.stringify({ userId, pin }),
     }),
 
+  guestAccess: (nombre: string, mesa: string) =>
+    requestJson<{
+      status: 'GUEST_AUTHENTICATED';
+      message: string;
+      token: string;
+      user: User;
+    }>('/api/auth/guest-access', {
+      method: 'POST',
+      body: JSON.stringify({ nombre, mesa }),
+    }),
+
   getCurrentUser: () => requestJson<{ user: User }>('/api/auth/me'),
 
   // Subida de Fotos y Videos
@@ -95,6 +120,17 @@ export const api = {
     requestJson<{ message: string }>(`/api/media/${mediaId}/request-takedown`, {
       method: 'POST',
       body: JSON.stringify({ motivo, solicitante }),
+    }),
+
+  reactToMedia: (mediaId: string, tipo: 'CORAZON' | 'ESTRELLA' = 'CORAZON') =>
+    requestJson<{
+      success: boolean;
+      action: 'ADDED' | 'REMOVED' | 'CHANGED';
+      user_reaction: 'CORAZON' | 'ESTRELLA' | null;
+      counts: { total: number; corazon: number; estrella: number };
+    }>(`/api/media/${mediaId}/react`, {
+      method: 'POST',
+      body: JSON.stringify({ tipo, visitor_id: getVisitorId() }),
     }),
 
   // Panel Exclusivo de Administradoras

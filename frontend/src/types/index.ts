@@ -48,6 +48,10 @@ export interface MediaItem {
   storyboard_orden?: number | null;
   duracion_display_seg?: number;
   transicion?: string;
+  reacciones_corazon?: number;
+  reacciones_estrella?: number;
+  reacciones_total?: number;
+  mi_reaccion?: 'CORAZON' | 'ESTRELLA' | null;
 }
 
 export interface StoryboardItem extends MediaItem {

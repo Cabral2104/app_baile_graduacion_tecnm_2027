@@ -347,3 +347,122 @@
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(229, 184, 91, 0.7);
 }
+
+/* Estilos de Impresión de Carteles QR para Mesas */
+.print-only {
+  display: none !important;
+}
+
+@media print {
+  /* Respetar colores y fondos exactos (modo oscuro, dorados, degradados) */
+  html, body {
+    margin: 0 !important;
+    padding: 0 !important;
+    background: transparent !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  *,
+  *::before,
+  *::after {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Ocultar todos los elementos generales de la app */
+  body * {
+    visibility: hidden;
+  }
+
+  .no-print,
+  nav,
+  header,
+  footer,
+  aside,
+  button,
+  input,
+  select {
+    display: none !important;
+  }
+
+  /* Mostrar únicamente las hojas de carteles de mesa */
+  #print-root,
+  #print-root * {
+    visibility: visible !important;
+  }
+
+  .print-only {
+    display: block !important;
+  }
+
+  #print-root {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: transparent !important;
+  }
+
+  .print-page {
+    page-break-after: always !important;
+    break-after: page !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    margin: 0 !important;
+    box-sizing: border-box !important;
+  }
+
+  .print-card-starry {
+    background: #0A1536 !important;
+    background-color: #0A1536 !important;
+    background-image: radial-gradient(ellipse at 50% 18%, #162E6E 0%, #0C1A3F 60%, #060D20 100%) !important;
+    color: #FAF7F2 !important;
+    border: 2.5px solid #F5D061 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .print-card-light {
+    background: #FAF8F5 !important;
+    background-color: #FAF8F5 !important;
+    color: #1A1815 !important;
+    border: 2px solid #C59B27 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .print-badge-starry {
+    background: #132557 !important;
+    background-color: #132557 !important;
+    color: #FFF5D6 !important;
+    border: 2px solid #F5D061 !important;
+    box-shadow: 0 0 10px rgba(245, 208, 97, 0.35) !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .print-badge-light {
+    background: #F3EDE2 !important;
+    background-color: #F3EDE2 !important;
+    color: #2B2118 !important;
+    border: 1.5px solid #C59B27 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .print-qr-box {
+    background: #FFFFFF !important;
+    background-color: #FFFFFF !important;
+    border: 2px solid #F5D061 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  @page {
+    size: letter portrait;
+    margin: 6mm;
+  }
+}

@@ -20,6 +20,8 @@ import {
   Trash2,
   Sparkles,
   RotateCcw,
+  Search,
+  Heart,
 } from 'lucide-react';
 import { MediaItem, SystemConfig, User, MediaEtapa } from '../types';
 import { api } from '../services/api';
@@ -68,6 +70,7 @@ export const MemoryGallery: React.FC<MemoryGalleryProps> = ({
   const videoMemories = items.filter((i) => i.estado === 'APROBADO_VIDEO');
 
   const [etapaFilter, setEtapaFilter] = useState<'TODAS' | MediaEtapa>('TODAS');
+  const [searchQuery, setSearchQuery] = useState('');
   const [showUploadBox, setShowUploadBox] = useState(false);
 
   // Paginación para evitar saturación visual y lentitud cuando haya muchas fotos
@@ -100,9 +103,130 @@ export const MemoryGallery: React.FC<MemoryGalleryProps> = ({
   const [takedownReason, setTakedownReason] = useState('');
   const [feedbackBanner, setFeedbackBanner] = useState<string | null>(null);
 
-  const filteredMemories = videoMemories.filter(
-    (item) => etapaFilter === 'TODAS' || item.etapa === etapaFilter
-  );
+  // Estados para reacciones en tiempo real en recuerdos y control anti-spam de 1 reacción por persona
+  const [localReactions, setLocalReactions] = useState<
+    Record<string, { corazon: number; estrella: number }>
+  >({});
+  const [myReactions, setMyReactions] = useState<
+    Record<string, 'CORAZON' | 'ESTRELLA' | null>
+  >({});
+
+  // Sincronizar mis reacciones cuando cargan los recuerdos
+  useEffect(() => {
+    const map: Record<string, 'CORAZON' | 'ESTRELLA' | null> = {};
+    videoMemories.forEach((p) => {
+      if (p.mi_reaccion) {
+        map[p.id] = p.mi_reaccion;
+      }
+    });
+    if (Object.keys(map).length > 0) {
+      setMyReactions((prev) => ({ ...map, ...prev }));
+    }
+  }, [videoMemories]);
+
+  const handleReactMemory = async (mediaId: string, tipo: 'CORAZON' | 'ESTRELLA') => {
+    const targetItem = videoMemories.find((i) => i.id === mediaId);
+    const currentReaction = myReactions[mediaId] ?? targetItem?.mi_reaccion ?? null;
+
+    // Si vuelve a presionar la misma reacción -> se quita (Toggle off)
+    const isTogglingOff = currentReaction === tipo;
+    const nextReaction: 'CORAZON' | 'ESTRELLA' | null = isTogglingOff ? null : tipo;
+
+    // Vibración háptica solo cuando se activa una reacción
+    if (!isTogglingOff && typeof navigator !== 'undefined' && navigator.vibrate) {
+      try {
+        navigator.vibrate(20);
+      } catch {}
+    }
+
+    // Actualización optimista de la reacción personal (1 reacción por persona)
+    setMyReactions((prev) => ({
+      ...prev,
+      [mediaId]: nextReaction,
+    }));
+
+    // Actualización optimista estricta de conteos para evitar spam
+    setLocalReactions((prev) => {
+      const current = prev[mediaId] || {
+        corazon: targetItem?.reacciones_corazon || 0,
+        estrella: targetItem?.reacciones_estrella || 0,
+      };
+      let newCorazon = current.corazon;
+      let newEstrella = current.estrella;
+
+      if (isTogglingOff) {
+        if (tipo === 'CORAZON') newCorazon = Math.max(0, newCorazon - 1);
+        if (tipo === 'ESTRELLA') newEstrella = Math.max(0, newEstrella - 1);
+      } else if (currentReaction === null) {
+        if (tipo === 'CORAZON') newCorazon += 1;
+        if (tipo === 'ESTRELLA') newEstrella += 1;
+      } else {
+        if (tipo === 'CORAZON') {
+          newCorazon += 1;
+          newEstrella = Math.max(0, newEstrella - 1);
+        } else {
+          newEstrella += 1;
+          newCorazon = Math.max(0, newCorazon - 1);
+        }
+      }
+
+      return {
+        ...prev,
+        [mediaId]: {
+          corazon: newCorazon,
+          estrella: newEstrella,
+        },
+      };
+    });
+
+    try {
+      const res = await api.reactToMedia(mediaId, tipo);
+      if (res?.counts) {
+        setLocalReactions((prev) => ({
+          ...prev,
+          [mediaId]: {
+            corazon: res.counts.corazon,
+            estrella: res.counts.estrella,
+          },
+        }));
+      }
+      if (res && res.user_reaction !== undefined) {
+        setMyReactions((prev) => ({
+          ...prev,
+          [mediaId]: res.user_reaction,
+        }));
+      }
+    } catch {
+      // Revertir a la reacción anterior en caso de fallo
+      setMyReactions((prev) => ({
+        ...prev,
+        [mediaId]: currentReaction,
+      }));
+    }
+  };
+
+  const normalizeSearch = (text: string) =>
+    (text || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .trim();
+
+  const filteredMemories = videoMemories.filter((item) => {
+    if (etapaFilter !== 'TODAS' && item.etapa !== etapaFilter) {
+      return false;
+    }
+    const term = normalizeSearch(searchQuery);
+    if (term) {
+      const nameMatch = normalizeSearch(item.autor_nombre || '').includes(term);
+      const badgeMatch = normalizeSearch(item.autor_distintivo || '').includes(term);
+      const captionMatch = normalizeSearch(item.pie_de_foto || '').includes(term);
+      if (!nameMatch && !badgeMatch && !captionMatch) {
+        return false;
+      }
+    }
+    return true;
+  });
 
   const totalPages = Math.max(1, Math.ceil(filteredMemories.length / pageSize));
   const safePage = Math.min(currentPage, totalPages);
@@ -520,53 +644,131 @@ export const MemoryGallery: React.FC<MemoryGalleryProps> = ({
         </AnimatePresence>
       </div>
 
-      {/* FILTROS POR ETAPA DE LA CARRERA */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap gap-2">
-          {(
-            [
-              { id: 'TODAS', label: `Todas las Memorias (${videoMemories.length})` },
-              { id: 'INICIO', label: '1. El Inicio' },
-              { id: 'SUPERVIVENCIA', label: '2. Supervivencia' },
-              { id: 'RECTA_FINAL', label: '3. Recta Final' },
-            ] as const
-          ).map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => {
-                setEtapaFilter(tab.id);
+      {/* FILTROS POR ETAPA DE LA CARRERA Y BÚSQUEDA POR ALUMNO O HISTORIA */}
+      <div className="glass rounded-2xl p-4 sm:p-5 space-y-3.5 border border-gala-silver/20 shadow-lg">
+        <div className="flex flex-col md:flex-row gap-3 items-stretch md:items-center justify-between">
+          {/* Pestañas de Etapas */}
+          <div className="flex flex-wrap gap-2">
+            {(
+              [
+                { id: 'TODAS', label: `Todas (${videoMemories.length})` },
+                { id: 'INICIO', label: '1. El Inicio' },
+                { id: 'SUPERVIVENCIA', label: '2. Supervivencia' },
+                { id: 'RECTA_FINAL', label: '3. Recta Final' },
+              ] as const
+            ).map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => {
+                  setEtapaFilter(tab.id);
+                  setCurrentPage(1);
+                }}
+                className={`px-3.5 py-2 rounded-xl text-xs font-medium border transition ${
+                  etapaFilter === tab.id
+                    ? 'btn-gold border-gala-gold shadow font-semibold'
+                    : 'bg-gala-velvet/90 text-gala-silver border-gala-silver/25 hover:border-gala-gold/50'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Campo de búsqueda por alumno o historia */}
+          <div className="relative min-w-[220px] md:max-w-xs flex-1">
+            <Search className="w-4 h-4 text-gala-gold absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
                 setCurrentPage(1);
               }}
-              className={`px-4 py-2 rounded-xl text-xs font-medium border transition ${
-                etapaFilter === tab.id
-                  ? 'btn-gold border-gala-gold shadow font-semibold'
-                  : 'bg-gala-velvet/90 text-gala-silver border-gala-silver/25 hover:border-gala-gold/50'
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
+              placeholder="Buscar por alumno o historia..."
+              className="w-full pl-10 pr-9 py-2.5 rounded-xl bg-gala-obsidian/90 border border-gala-silver/30 text-xs text-gala-ivory placeholder-gala-muted focus:border-gala-gold focus:outline-none transition"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchQuery('');
+                  setCurrentPage(1);
+                }}
+                className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-gala-muted hover:text-gala-ivory"
+                title="Limpiar búsqueda"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
         </div>
 
-        {filteredMemories.length > 0 && (
-          <button
-            type="button"
-            onClick={() => setSelectedViewerIndex(0)}
-            className="px-3.5 py-2 rounded-xl btn-silver text-xs text-gala-champagne flex items-center gap-1.5"
-          >
-            <Eye className="w-3.5 h-3.5 text-gala-gold" /> Ver Memorias Una por Una
-          </button>
-        )}
+        {/* Resumen de filtros y botón Ver Una por Una */}
+        <div className="pt-2 border-t border-gala-silver/15 flex flex-wrap items-center justify-between gap-2 text-xs">
+          <div className="flex flex-wrap items-center gap-2 text-gala-silver">
+            <span>
+              Mostrando <strong className="text-gala-champagne">{filteredMemories.length}</strong> de {videoMemories.length} recuerdos
+            </span>
+            {(searchQuery.trim() !== '' || etapaFilter !== 'TODAS') && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchQuery('');
+                  setEtapaFilter('TODAS');
+                  setCurrentPage(1);
+                }}
+                className="px-2 py-0.5 rounded-md bg-gala-velvet border border-gala-silver/30 text-gala-gold text-[11px] font-medium flex items-center gap-1 transition"
+              >
+                <RotateCcw className="w-3 h-3" /> Restablecer filtros
+              </button>
+            )}
+          </div>
+
+          {filteredMemories.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setSelectedViewerIndex(0)}
+              className="px-3.5 py-1.5 rounded-xl btn-silver text-xs text-gala-champagne flex items-center gap-1.5 transition"
+            >
+              <Eye className="w-3.5 h-3.5 text-gala-gold" /> Ver Memorias Una por Una
+            </button>
+          )}
+        </div>
       </div>
 
       {/* CUADRICULA PAGINADA DE MEMORIAS APROBADAS PARA EL VIDEO */}
       {filteredMemories.length === 0 ? (
-        <div className="py-14 text-center glass rounded-2xl space-y-2">
-          <Film className="w-8 h-8 text-gala-gold mx-auto" />
-          <p className="text-sm text-gala-parchment">
-            Aún no hay recuerdos en esta etapa del video.
-          </p>
+        <div className="py-14 text-center glass rounded-2xl space-y-3">
+          {searchQuery.trim() ? (
+            <>
+              <Search className="w-8 h-8 text-gala-gold/70 mx-auto" />
+              <p className="text-base font-serif text-gala-ivory">
+                No se encontraron recuerdos para "{searchQuery}"
+              </p>
+              <p className="text-xs text-gala-parchment/80 max-w-md mx-auto">
+                No hay recuerdos de la carrera que coincidan con la búsqueda. Intenta con otro nombre o borra el término.
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchQuery('');
+                  setEtapaFilter('TODAS');
+                  setCurrentPage(1);
+                }}
+                className="px-4 py-2 rounded-xl btn-silver text-xs text-gala-champagne inline-flex items-center gap-1.5"
+              >
+                <RotateCcw className="w-3.5 h-3.5 text-gala-gold" /> Ver todas las memorias ({videoMemories.length})
+              </button>
+            </>
+          ) : (
+            <>
+              <Film className="w-8 h-8 text-gala-gold mx-auto" />
+              <p className="text-sm text-gala-parchment">
+                Aún no hay recuerdos en esta etapa del video.
+              </p>
+            </>
+          )}
         </div>
       ) : (
         <div className="space-y-5">
@@ -618,11 +820,81 @@ export const MemoryGallery: React.FC<MemoryGalleryProps> = ({
                       <p className="font-serif italic text-lg text-gala-ivory leading-snug">
                         "{item.pie_de_foto}"
                       </p>
-                      <div className="text-xs text-gala-silver/85">
-                        <span className="font-medium text-gala-champagne">
-                          {item.autor_nombre}
-                        </span>
-                        {item.autor_distintivo ? ` · ${item.autor_distintivo}` : ''}
+                      <div className="flex items-center justify-between gap-2 pt-0.5">
+                        <div className="text-xs text-gala-silver/85 truncate">
+                          <span className="font-medium text-gala-champagne">
+                            {item.autor_nombre}
+                          </span>
+                          {item.autor_distintivo ? ` · ${item.autor_distintivo}` : ''}
+                        </div>
+
+                        {/* Botones de Reacción compactos (Límite: 1 por persona) */}
+                        {(() => {
+                          const itemMyReaction = myReactions[item.id] ?? item.mi_reaccion ?? null;
+                          const isItemHeart = itemMyReaction === 'CORAZON';
+                          const isItemStar = itemMyReaction === 'ESTRELLA';
+                          const counts = {
+                            corazon: localReactions[item.id]?.corazon ?? item.reacciones_corazon ?? 0,
+                            estrella: localReactions[item.id]?.estrella ?? item.reacciones_estrella ?? 0,
+                          };
+
+                          return (
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleReactMemory(item.id, 'CORAZON');
+                                }}
+                                className={`px-2 py-1 rounded-lg text-[11px] font-semibold flex items-center gap-1 transition active:scale-90 ${
+                                  isItemHeart
+                                    ? 'bg-rose-900/70 border border-rose-400 text-rose-100 ring-1 ring-rose-400 shadow-[0_0_10px_rgba(244,63,94,0.35)]'
+                                    : 'bg-rose-950/40 hover:bg-rose-950/70 border border-rose-500/30 text-rose-300'
+                                }`}
+                                title={
+                                  isItemHeart
+                                    ? 'Tu reacción activa · Toca para quitar'
+                                    : 'Enviar corazón (máximo 1 por persona)'
+                                }
+                              >
+                                <Heart
+                                  className={`w-3 h-3 ${
+                                    isItemHeart
+                                      ? 'text-rose-400 fill-rose-400'
+                                      : 'text-rose-400/80 fill-rose-400/20'
+                                  }`}
+                                />
+                                <span>{counts.corazon}</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleReactMemory(item.id, 'ESTRELLA');
+                                }}
+                                className={`px-2 py-1 rounded-lg text-[11px] font-semibold flex items-center gap-1 transition active:scale-90 ${
+                                  isItemStar
+                                    ? 'bg-amber-900/70 border border-gala-gold text-gala-champagne ring-1 ring-gala-gold shadow-[0_0_10px_rgba(212,175,55,0.35)]'
+                                    : 'bg-amber-950/40 hover:bg-amber-950/70 border border-gala-gold/30 text-gala-champagne'
+                                }`}
+                                title={
+                                  isItemStar
+                                    ? 'Tu reacción activa · Toca para quitar'
+                                    : 'Enviar estrella (máximo 1 por persona)'
+                                }
+                              >
+                                <Sparkles
+                                  className={`w-3 h-3 ${
+                                    isItemStar
+                                      ? 'text-gala-gold fill-gala-gold'
+                                      : 'text-gala-gold/80'
+                                  }`}
+                                />
+                                <span>{counts.estrella}</span>
+                              </button>
+                            </div>
+                          );
+                        })()}
                       </div>
                     </div>
                   </div>

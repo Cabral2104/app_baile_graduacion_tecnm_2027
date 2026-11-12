@@ -1,4 +1,5 @@
 const express = require('express');
+const crypto = require('crypto');
 const { db } = require('../db/database');
 const { normalizeText, hashPin, verifyPin, signToken, verifyToken } = require('../utils/security');
 
@@ -171,6 +172,53 @@ router.post('/verify-pin', (req, res) => {
  */
 router.get('/me', requireAuth, (req, res) => {
   return res.json({ user: req.user });
+});
+
+/**
+ * 4. Acceso rápido para acompañantes/invitados que escanearon el QR de una mesa
+ * POST /api/auth/guest-access
+ * Body: { nombre: string, mesa: string }
+ */
+router.post('/guest-access', (req, res) => {
+  const nombre = String(req.body.nombre || req.body.nombre_completo || '').trim();
+  const mesa = String(req.body.mesa || 'Mesa General').trim();
+
+  if (!nombre) {
+    return res.status(400).json({
+      error: 'Por favor ingresa tu nombre o el de tu familia para identificarte en la mesa.',
+    });
+  }
+
+  const normalized = normalizeText(nombre);
+  const now = new Date().toISOString();
+  const guestId = `guest-${crypto.randomUUID().slice(0, 10)}`;
+
+  db.prepare(`
+    INSERT INTO User (id, nombre_completo, nombre_normalizado, distintivo_homonimo, mesa, pin_hash, rol, activo, created_at, updated_at)
+    VALUES (?, ?, ?, 'Invitado de Mesa', ?, NULL, 'INVITADO', 1, ?, ?)
+  `).run(guestId, nombre, normalized, mesa, now, now);
+
+  const sessionUser = {
+    id: guestId,
+    nombre_completo: nombre,
+    distintivo_homonimo: 'Invitado de Mesa',
+    mesa,
+    rol: 'INVITADO',
+    tiene_pin: false,
+  };
+
+  const token = signToken({
+    id: guestId,
+    rol: 'INVITADO',
+    nombre,
+  });
+
+  return res.json({
+    status: 'GUEST_AUTHENTICATED',
+    message: `¡Bienvenido(a), ${nombre}! Te has unido a la ${mesa}.`,
+    token,
+    user: sessionUser,
+  });
 });
 
 module.exports = {

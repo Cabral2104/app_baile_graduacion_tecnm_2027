@@ -10,6 +10,7 @@ import {
   CheckCircle2,
   AlertCircle,
   Users,
+  QrCode,
 } from 'lucide-react';
 import { User } from '../types';
 import { api, saveSession } from '../services/api';
@@ -33,6 +34,23 @@ export const AuthTypeaheadModal: React.FC<AuthTypeaheadModalProps> = ({
   const [confirmPin, setConfirmPin] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Modo de ingreso: Alumno del padrón o Acompañante de Mesa (QR)
+  const [authMode, setAuthMode] = useState<'STUDENT' | 'GUEST'>('STUDENT');
+  const [guestName, setGuestName] = useState('');
+  const [guestMesa, setGuestMesa] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('gala_guest_mesa') || 'Mesa 01';
+    }
+    return 'Mesa 01';
+  });
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('gala_guest_mesa');
+      if (saved) setGuestMesa(saved);
+    }
+  }, [isOpen]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -98,6 +116,26 @@ export const AuthTypeaheadModal: React.FC<AuthTypeaheadModalProps> = ({
     }
   };
 
+  const handleGuestSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanName = guestName.trim();
+    if (!cleanName) {
+      setError('Por favor escribe tu nombre o el de tu familia.');
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await api.guestAccess(cleanName, guestMesa);
+      saveSession(res.token, res.user);
+      onSuccess(res.user);
+    } catch (err: any) {
+      setError(err.message || 'Error al iniciar acceso como invitado.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -125,14 +163,20 @@ export const AuthTypeaheadModal: React.FC<AuthTypeaheadModalProps> = ({
             )}
           </div>
           <h2 className="font-serif text-2xl sm:text-3xl text-gala-ivory mt-1 font-normal">
-            {selectedUser ? 'Confirmación de Identidad' : 'Identifícate en la Lista'}
+            {selectedUser
+              ? 'Confirmación de Identidad'
+              : authMode === 'GUEST'
+              ? 'Acceso Rápido de Mesa'
+              : 'Identifícate en la Lista'}
           </h2>
           <p className="text-xs sm:text-sm text-gala-parchment/80 mt-1">
             {selectedUser
               ? selectedUser.tiene_pin
                 ? 'Ingresa tu PIN personal de 4 dígitos para continuar.'
                 : 'Primer ingreso detectado: crea un PIN de 4 dígitos para proteger tus subidas.'
-              : 'Busca tu nombre sin necesidad de matrícula ni correo electrónico.'}
+              : authMode === 'GUEST'
+              ? 'Si eres acompañante o familiar, no necesitas PIN. Ingresa tu nombre para comenzar.'
+              : 'Busca tu nombre en la lista sin necesidad de matrícula ni correo electrónico.'}
           </p>
         </div>
 
@@ -147,18 +191,102 @@ export const AuthTypeaheadModal: React.FC<AuthTypeaheadModalProps> = ({
                 exit={{ opacity: 0, x: 12 }}
                 className="space-y-4"
               >
-                {/* Buscador Predictivo Typeahead */}
-                <div className="relative">
-                  <Search className="w-4 h-4 text-gala-gold absolute left-4 top-1/2 -translate-y-1/2" />
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Escribe tu nombre o apellido (ej. maria, alejandro, sofia)..."
-                    autoFocus
-                    className="w-full pl-11 pr-4 py-3.5 bg-gala-obsidian border border-gala-gold/30 rounded-xl text-sm text-gala-ivory placeholder:text-gala-muted focus:outline-none focus:border-gala-gold transition"
-                  />
+                {/* Selector de Modo: Alumno o Acompañante de Mesa (QR) */}
+                <div className="grid grid-cols-2 gap-1.5 p-1 rounded-xl bg-gala-obsidian border border-gala-gold/25">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAuthMode('STUDENT');
+                      setError(null);
+                    }}
+                    className={`py-2 px-3 rounded-lg text-xs font-semibold transition ${
+                      authMode === 'STUDENT'
+                        ? 'bg-gala-gold text-gala-obsidian shadow'
+                        : 'text-gala-silver hover:text-gala-ivory'
+                    }`}
+                  >
+                    Alumno / Graduado
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAuthMode('GUEST');
+                      setError(null);
+                    }}
+                    className={`py-2 px-3 rounded-lg text-xs font-semibold transition flex items-center justify-center gap-1.5 ${
+                      authMode === 'GUEST'
+                        ? 'bg-gala-gold text-gala-obsidian shadow'
+                        : 'text-gala-silver hover:text-gala-ivory'
+                    }`}
+                  >
+                    <QrCode className="w-3.5 h-3.5" />
+                    <span>Acompañante de Mesa</span>
+                  </button>
                 </div>
+
+                {authMode === 'GUEST' ? (
+                  /* Formulario de Acompañante de Mesa */
+                  <form onSubmit={handleGuestSubmit} className="space-y-4 pt-1">
+                    <div className="p-3.5 rounded-xl bg-gala-obsidian/90 border border-gala-gold/30 space-y-1">
+                      <div className="text-xs text-gala-champagne font-semibold flex items-center gap-1.5">
+                        <QrCode className="w-4 h-4 text-gala-gold" />
+                        Acceso por Código QR de Mesa
+                      </div>
+                      <p className="text-[11px] text-gala-silver/80">
+                        Como acompañante o familiar no requieres PIN. Tus fotos se proyectarán en la pantalla con el distintivo de tu mesa.
+                      </p>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs uppercase tracking-wider text-gala-gold mb-1.5">
+                        Tu Nombre o el de tu Familia
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={guestName}
+                        onChange={(e) => setGuestName(e.target.value)}
+                        placeholder="Ej. Familia Morales, Carlos Vega, etc."
+                        className="w-full px-4 py-3 bg-gala-obsidian border border-gala-gold/30 rounded-xl text-sm text-gala-ivory placeholder:text-gala-muted focus:outline-none focus:border-gala-gold"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs uppercase tracking-wider text-gala-gold mb-1.5">
+                        Mesa Asignada
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={guestMesa}
+                        onChange={(e) => setGuestMesa(e.target.value)}
+                        placeholder="Ej. Mesa 04"
+                        className="w-full px-4 py-3 bg-gala-obsidian border border-gala-gold/30 rounded-xl text-sm text-gala-ivory font-mono focus:outline-none focus:border-gala-gold"
+                      />
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={loading || !guestName.trim()}
+                      className="w-full py-3.5 rounded-xl btn-gold text-gala-obsidian font-bold text-sm shadow-xl hover:scale-[1.01] transition disabled:opacity-40"
+                    >
+                      {loading ? 'Accediendo...' : 'Entrar a la Fiesta sin PIN'}
+                    </button>
+                  </form>
+                ) : (
+                  <>
+                    {/* Buscador Predictivo Typeahead para Alumnos */}
+                    <div className="relative">
+                      <Search className="w-4 h-4 text-gala-gold absolute left-4 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        placeholder="Escribe tu nombre o apellido (ej. maria, alejandro, sofia)..."
+                        autoFocus
+                        className="w-full pl-11 pr-4 py-3.5 bg-gala-obsidian border border-gala-gold/30 rounded-xl text-sm text-gala-ivory placeholder:text-gala-muted focus:outline-none focus:border-gala-gold transition"
+                      />
+                    </div>
 
                 {/* Lista de Coincidencias con Distintivo Homónimo */}
                 <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
@@ -257,7 +385,9 @@ export const AuthTypeaheadModal: React.FC<AuthTypeaheadModalProps> = ({
                     </button>
                   </div>
                 </div>
-              </motion.div>
+              </>
+            )}
+          </motion.div>
             ) : (
               <motion.form
                 key="step-pin"

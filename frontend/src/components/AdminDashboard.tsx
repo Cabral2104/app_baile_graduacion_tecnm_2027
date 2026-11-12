@@ -25,6 +25,7 @@ import {
   SkipBack,
   Search,
   FileSpreadsheet,
+  QrCode,
 } from 'lucide-react';
 import {
   AdminOverviewResponse,
@@ -35,6 +36,7 @@ import {
 import { api } from '../services/api';
 import { PaginationBar } from './PaginationBar';
 import { StageBackground } from './StageBackground';
+import { TableQrKit } from './TableQrKit';
 
 interface AdminDashboardProps {
   onConfigChanged: () => void;
@@ -46,11 +48,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [data, setData] = useState<AdminOverviewResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeSubTab, setActiveSubTab] = useState<
-    'MODERATION' | 'STORYBOARD' | 'USERS' | 'CONFIG'
+    'MODERATION' | 'STORYBOARD' | 'USERS' | 'QR_KIT' | 'CONFIG'
   >('MODERATION');
   const [statusFilter, setStatusFilter] = useState<
     'ALL' | 'PENDIENTE' | 'APROBADO_VIDEO' | 'APROBADO_GALERIA' | 'RECHAZADO' | 'RETIRO'
   >('PENDIENTE');
+  const [mediaSearch, setMediaSearch] = useState('');
+  const [mediaMesaFilter, setMediaMesaFilter] = useState<'TODAS' | string>('TODAS');
   const [storyboard, setStoryboard] = useState<StoryboardItem[]>([]);
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [savingOrder, setSavingOrder] = useState(false);
@@ -75,6 +79,40 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [newGuestBadge, setNewGuestBadge] = useState('');
   const [newGuestMesa, setNewGuestMesa] = useState('');
   const [excelBulkText, setExcelBulkText] = useState('');
+
+  // Filtro de elementos multimedia según la pestaña de estado activa (Pendientes, Aprobadas Video, Aprobadas Fiesta, etc.)
+  const currentStatusMedia = React.useMemo(() => {
+    if (!data) return [];
+    return data.mediaItems.filter((item) => {
+      if (statusFilter === 'RETIRO') return Boolean(item.solicitud_retiro);
+      if (statusFilter === 'ALL') return true;
+      return item.estado === statusFilter;
+    });
+  }, [data, statusFilter]);
+
+  // Mesas únicas disponibles y conteo exacto de fotos DENTRO de la pestaña de estado activa
+  const availableMediaMesas = React.useMemo(() => {
+    const mesaMap = new Map<string, number>();
+    currentStatusMedia.forEach((item) => {
+      const mesa = item.autor_mesa?.trim();
+      if (mesa) {
+        mesaMap.set(mesa, (mesaMap.get(mesa) || 0) + 1);
+      }
+    });
+    return Array.from(mesaMap.entries()).sort(([a], [b]) =>
+      a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })
+    );
+  }, [currentStatusMedia]);
+
+  // Si se cambia de pestaña y la mesa seleccionada no tiene fotos en esa nueva categoría, se restablece a TODAS
+  useEffect(() => {
+    if (mediaMesaFilter !== 'TODAS') {
+      const mesaExists = availableMediaMesas.some(([mesa]) => mesa === mediaMesaFilter);
+      if (!mesaExists) {
+        setMediaMesaFilter('TODAS');
+      }
+    }
+  }, [availableMediaMesas, mediaMesaFilter]);
 
   const showToast = (msg: string) => {
     setToast(msg);
@@ -316,10 +354,29 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     );
   }
 
-  const filteredMedia = data.mediaItems.filter((item) => {
-    if (statusFilter === 'ALL') return true;
-    if (statusFilter === 'RETIRO') return Boolean(item.solicitud_retiro);
-    return item.estado === statusFilter;
+  const normalizeSearch = (text: string) =>
+    (text || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .trim();
+
+  const filteredMedia = currentStatusMedia.filter((item) => {
+    if (mediaMesaFilter !== 'TODAS') {
+      const itemMesa = (item.autor_mesa || '').trim().toLowerCase();
+      if (itemMesa !== mediaMesaFilter.trim().toLowerCase()) return false;
+    }
+
+    if (mediaSearch.trim()) {
+      const term = normalizeSearch(mediaSearch);
+      const nameMatch = normalizeSearch(item.autor_nombre || '').includes(term);
+      const mesaMatch = normalizeSearch(item.autor_mesa || '').includes(term);
+      const badgeMatch = normalizeSearch(item.autor_distintivo || '').includes(term);
+      const captionMatch = normalizeSearch(item.pie_de_foto || '').includes(term);
+      if (!nameMatch && !mesaMatch && !badgeMatch && !captionMatch) return false;
+    }
+
+    return true;
   });
 
   const totalMediaPages = Math.max(1, Math.ceil(filteredMedia.length / mediaPageSize));
@@ -372,21 +429,21 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </p>
       </div>
 
-      {/* 4 Pestañas Numeradas y Claras */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+      {/* 5 Pestañas Numeradas y Claras */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5">
         <button
           type="button"
           onClick={() => setActiveSubTab('MODERATION')}
-          className={`p-3.5 rounded-xl text-left border transition flex items-center gap-3 ${
+          className={`p-3 rounded-xl text-left border transition flex items-center gap-2.5 ${
             activeSubTab === 'MODERATION'
               ? 'btn-gold border-gala-gold font-semibold shadow-lg'
               : 'bg-gala-velvet text-gala-silver border-gala-silver/20 hover:border-gala-gold/45'
           }`}
         >
-          <Sparkles className="w-5 h-5 shrink-0" />
-          <div>
-            <div className="text-xs">1. Aprobar Fotos Recibidas</div>
-            <div className="text-[11px] opacity-80 font-mono">
+          <Sparkles className="w-4 h-4 shrink-0" />
+          <div className="min-w-0">
+            <div className="text-xs font-semibold truncate">1. Aprobar Fotos</div>
+            <div className="text-[10px] opacity-80 font-mono">
               {data.stats.pendientes} por revisar
             </div>
           </div>
@@ -395,17 +452,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         <button
           type="button"
           onClick={() => setActiveSubTab('STORYBOARD')}
-          className={`p-3.5 rounded-xl text-left border transition flex items-center gap-3 ${
+          className={`p-3 rounded-xl text-left border transition flex items-center gap-2.5 ${
             activeSubTab === 'STORYBOARD'
               ? 'btn-gold border-gala-gold font-semibold shadow-lg'
               : 'bg-gala-velvet text-gala-silver border-gala-silver/20 hover:border-gala-gold/45'
           }`}
         >
-          <Layers className="w-5 h-5 shrink-0" />
-          <div>
-            <div className="text-xs">2. Ordenar Video y ZIP</div>
-            <div className="text-[11px] opacity-80 font-mono">
-              {storyboard.length} escenas en el video
+          <Layers className="w-4 h-4 shrink-0" />
+          <div className="min-w-0">
+            <div className="text-xs font-semibold truncate">2. Ordenar Video</div>
+            <div className="text-[10px] opacity-80 font-mono">
+              {storyboard.length} escenas
             </div>
           </div>
         </button>
@@ -413,16 +470,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         <button
           type="button"
           onClick={() => setActiveSubTab('USERS')}
-          className={`p-3.5 rounded-xl text-left border transition flex items-center gap-3 ${
+          className={`p-3 rounded-xl text-left border transition flex items-center gap-2.5 ${
             activeSubTab === 'USERS'
               ? 'btn-gold border-gala-gold font-semibold shadow-lg'
               : 'bg-gala-velvet text-gala-silver border-gala-silver/20 hover:border-gala-gold/45'
           }`}
         >
-          <Users className="w-5 h-5 shrink-0" />
-          <div>
-            <div className="text-xs">3. Invitados y PINs</div>
-            <div className="text-[11px] opacity-80 font-mono">
+          <Users className="w-4 h-4 shrink-0" />
+          <div className="min-w-0">
+            <div className="text-xs font-semibold truncate">3. Invitados y PINs</div>
+            <div className="text-[10px] opacity-80 font-mono">
               {data.users.length} en la lista
             </div>
           </div>
@@ -430,18 +487,36 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
         <button
           type="button"
+          onClick={() => setActiveSubTab('QR_KIT')}
+          className={`p-3 rounded-xl text-left border transition flex items-center gap-2.5 ${
+            activeSubTab === 'QR_KIT'
+              ? 'btn-gold border-gala-gold font-semibold shadow-lg'
+              : 'bg-gala-velvet text-gala-silver border-gala-silver/20 hover:border-gala-gold/45'
+          }`}
+        >
+          <QrCode className="w-4 h-4 shrink-0" />
+          <div className="min-w-0">
+            <div className="text-xs font-semibold truncate">4. Carteles QR Mesas</div>
+            <div className="text-[10px] opacity-80 font-mono text-gala-gold">
+              Kit Imprimible
+            </div>
+          </div>
+        </button>
+
+        <button
+          type="button"
           onClick={() => setActiveSubTab('CONFIG')}
-          className={`p-3.5 rounded-xl text-left border transition flex items-center gap-3 ${
+          className={`p-3 rounded-xl text-left border transition flex items-center gap-2.5 ${
             activeSubTab === 'CONFIG'
               ? 'btn-gold border-gala-gold font-semibold shadow-lg'
               : 'bg-gala-velvet text-gala-silver border-gala-silver/20 hover:border-gala-gold/45'
           }`}
         >
-          <Settings className="w-5 h-5 shrink-0" />
-          <div>
-            <div className="text-xs">4. Ajustes del Evento</div>
-            <div className="text-[11px] opacity-80 font-mono">
-              {data.config.subidas_abiertas ? 'Subidas Abiertas' : 'Cerradas'}
+          <Settings className="w-4 h-4 shrink-0" />
+          <div className="min-w-0">
+            <div className="text-xs font-semibold truncate">5. Ajustes Evento</div>
+            <div className="text-[10px] opacity-80 font-mono">
+              {data.config.subidas_abiertas ? 'Abiertas' : 'Cerradas'}
             </div>
           </div>
         </button>
@@ -479,11 +554,88 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             ))}
           </div>
 
+          {/* BARRA DE BÚSQUEDA Y FILTRO POR MESA EN MODERACIÓN */}
+          <div className="flex flex-col sm:flex-row gap-2.5 items-stretch sm:items-center justify-between">
+            <div className="relative flex-1 sm:max-w-md">
+              <Search className="w-4 h-4 text-gala-gold absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input
+                type="text"
+                value={mediaSearch}
+                onChange={(e) => {
+                  setMediaSearch(e.target.value);
+                  setMediaPage(1);
+                }}
+                placeholder="Buscar por alumno, mesa o dedicatoria..."
+                className="w-full pl-9 pr-8 py-2 rounded-xl bg-gala-obsidian border border-gala-silver/30 text-xs text-gala-ivory placeholder-gala-muted focus:border-gala-gold focus:outline-none transition"
+              />
+              {mediaSearch && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMediaSearch('');
+                    setMediaPage(1);
+                  }}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-gala-muted hover:text-gala-ivory"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <select
+                value={mediaMesaFilter}
+                onChange={(e) => {
+                  setMediaMesaFilter(e.target.value);
+                  setMediaPage(1);
+                }}
+                className="px-3 py-2 rounded-xl bg-gala-obsidian border border-gala-silver/30 text-xs text-gala-ivory focus:border-gala-gold focus:outline-none cursor-pointer"
+              >
+                <option value="TODAS">Todas las mesas ({currentStatusMedia.length})</option>
+                {availableMediaMesas.map(([mesa, count]) => (
+                  <option key={mesa} value={mesa}>
+                    {mesa} ({count} {count === 1 ? 'foto' : 'fotos'})
+                  </option>
+                ))}
+              </select>
+
+              {(mediaSearch.trim() || mediaMesaFilter !== 'TODAS') && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMediaSearch('');
+                    setMediaMesaFilter('TODAS');
+                    setMediaPage(1);
+                  }}
+                  className="px-2.5 py-2 rounded-xl btn-silver text-xs text-gala-champagne flex items-center gap-1"
+                  title="Restablecer filtros"
+                >
+                  <RotateCcw className="w-3.5 h-3.5 text-gala-gold" />
+                </button>
+              )}
+            </div>
+          </div>
+
           {filteredMedia.length === 0 ? (
-            <div className="py-12 text-center glass rounded-2xl">
+            <div className="py-12 text-center glass rounded-2xl space-y-2">
               <p className="text-sm text-gala-parchment">
-                No hay fotos pendientes en esta categoría.
+                {mediaSearch.trim() || mediaMesaFilter !== 'TODAS'
+                  ? 'No hay fotos que coincidan con la búsqueda o mesa seleccionada.'
+                  : 'No hay fotos pendientes en esta categoría.'}
               </p>
+              {(mediaSearch.trim() || mediaMesaFilter !== 'TODAS') && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMediaSearch('');
+                    setMediaMesaFilter('TODAS');
+                    setMediaPage(1);
+                  }}
+                  className="px-3 py-1.5 rounded-lg btn-silver text-xs text-gala-gold inline-flex items-center gap-1 mt-1"
+                >
+                  <RotateCcw className="w-3 h-3" /> Limpiar búsqueda
+                </button>
+              )}
             </div>
           ) : (
             <div className="space-y-5">
@@ -929,7 +1081,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
       )}
 
-      {/* PESTAÑA 4: AJUSTES DEL EVENTO */}
+      {/* PESTAÑA 4: KIT DE CARTELES QR PARA MESAS (IMPRIMIBLE) */}
+      {activeSubTab === 'QR_KIT' && (
+        <TableQrKit users={data.users} config={data.config} />
+      )}
+
+      {/* PESTAÑA 5: AJUSTES DEL EVENTO */}
       {activeSubTab === 'CONFIG' && (
         <div className="p-6 rounded-2xl glass space-y-6">
           <div>
