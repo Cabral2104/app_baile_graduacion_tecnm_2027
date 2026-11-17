@@ -73,6 +73,26 @@ async function requestJson<T>(url: string, options: RequestInit = {}): Promise<T
   return data as T;
 }
 
+async function downloadBinaryFile(endpoint: string, fallbackFilename: string): Promise<void> {
+  const token = getStoredToken();
+  const res = await fetch(endpoint, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) {
+    const errBody = await res.json().catch(() => ({}));
+    throw new Error(errBody.error || 'No fue posible descargar el archivo.');
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = fallbackFilename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 export const api = {
   // Configuración Pública
   getPublicMediaAndConfig: () =>
@@ -115,6 +135,14 @@ export const api = {
   },
 
   getMyUploads: () => requestJson<{ items: MediaItem[] }>('/api/media/my-uploads'),
+
+  deleteMyMedia: (mediaId: string) =>
+    requestJson<{ message: string; deletedId: string }>(`/api/media/${mediaId}`, {
+      method: 'DELETE',
+    }),
+
+  downloadPhotographerAlbumZip: () =>
+    downloadBinaryFile('/api/media/photographer-zip', 'Album_Fotografo_Oficial_TECNM.zip'),
 
   requestTakedown: (mediaId: string, motivo: string, solicitante: string) =>
     requestJson<{ message: string }>(`/api/media/${mediaId}/request-takedown`, {
@@ -170,29 +198,47 @@ export const api = {
       body: JSON.stringify(payload),
     }),
 
+  updateUser: (
+    userId: string,
+    payload: {
+      nombre_completo?: string;
+      distintivo_homonimo?: string;
+      mesa?: string;
+      rol?: 'ALUMNO' | 'ADMIN';
+    }
+  ) =>
+    requestJson<{ message: string }>(`/api/admin/users/${userId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }),
+
+  deleteUser: (userId: string) =>
+    requestJson<{ message: string; userId: string }>(`/api/admin/users/${userId}`, {
+      method: 'DELETE',
+    }),
+
   updateConfig: (payload: Partial<SystemConfig> & { fase_actual?: EventFase }) =>
     requestJson<{ message: string; config: SystemConfig }>('/api/admin/config', {
       method: 'PATCH',
       body: JSON.stringify(payload),
     }),
 
-  downloadSequentialZip: async () => {
-    const token = getStoredToken();
-    const res = await fetch('/api/admin/export-zip', {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-    });
-    if (!res.ok) {
-      throw new Error('No fue posible generar el archivo ZIP secuencial.');
-    }
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'Storyboard_Graduacion_Secuencial.zip';
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
+  downloadSequentialZip: (scope: 'STORYBOARD' | 'FIESTA' | 'FOTOGRAFO' = 'STORYBOARD') => {
+    const filename =
+      scope === 'FIESTA'
+        ? 'Dia_De_La_Fiesta_TECNM.zip'
+        : scope === 'FOTOGRAFO'
+        ? 'Album_Fotografo_Oficial_TECNM.zip'
+        : 'Storyboard_Graduacion_Secuencial.zip';
+    return downloadBinaryFile(`/api/admin/export-zip?scope=${scope}`, filename);
+  },
+
+  downloadDatabaseBackup: () => {
+    const dateStamp = new Date().toISOString().slice(0, 10);
+    return downloadBinaryFile(
+      '/api/admin/backup-db',
+      `Respaldo_Graduacion_TECNM_${dateStamp}.db`
+    );
   },
 };
 

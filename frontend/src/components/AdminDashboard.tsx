@@ -26,6 +26,12 @@ import {
   Search,
   FileSpreadsheet,
   QrCode,
+  Database,
+  Pencil,
+  Trash2,
+  Check,
+  FolderArchive,
+  Camera,
 } from 'lucide-react';
 import {
   AdminOverviewResponse,
@@ -37,6 +43,7 @@ import { api } from '../services/api';
 import { PaginationBar } from './PaginationBar';
 import { StageBackground } from './StageBackground';
 import { TableQrKit } from './TableQrKit';
+import { useGalaConfirm } from './GalaConfirmModal';
 
 interface AdminDashboardProps {
   onConfigChanged: () => void;
@@ -45,6 +52,7 @@ interface AdminDashboardProps {
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onConfigChanged,
 }) => {
+  const confirm = useGalaConfirm();
   const [data, setData] = useState<AdminOverviewResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeSubTab, setActiveSubTab] = useState<
@@ -58,8 +66,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [storyboard, setStoryboard] = useState<StoryboardItem[]>([]);
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [savingOrder, setSavingOrder] = useState(false);
-  const [exportingZip, setExportingZip] = useState(false);
+  const [exportingScope, setExportingScope] = useState<string | null>(null);
+  const [downloadingBackup, setDownloadingBackup] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+
+  // Edición en línea de invitados en Padrón
+  const [editingUserId, setEditingUserId] = useState<string | null>(null);
+  const [editGuestName, setEditGuestName] = useState('');
+  const [editGuestBadge, setEditGuestBadge] = useState('');
+  const [editGuestMesa, setEditGuestMesa] = useState('');
 
   // Paginación para moderación de fotos y lista de invitados
   const [mediaPage, setMediaPage] = useState(1);
@@ -194,6 +209,42 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     estado: MediaEstado,
     restaurarPrivacidad = false
   ) => {
+    const confirmMeta =
+      estado === 'RECHAZADO'
+        ? {
+            title: '¿Descartar fotografía?',
+            description:
+              'La fotografía se ocultará de las galerías públicas y dejará de proyectarse si estaba activa.',
+            confirmText: 'Sí, descartar',
+            variant: 'danger' as const,
+          }
+        : restaurarPrivacidad
+        ? {
+            title: '¿Restaurar fotografía?',
+            description:
+              'Se quitará el reporte de privacidad y el archivo volverá a mostrarse públicamente.',
+            confirmText: 'Sí, restaurar',
+            variant: 'warning' as const,
+          }
+        : estado === 'APROBADO_VIDEO'
+        ? {
+            title: '¿Aprobar para el Video (Modo Memoria)?',
+            description:
+              'Se publicará en Modo Memoria y se agregará automáticamente a la secuencia del video conmemorativo.',
+            confirmText: 'Sí, enviar al video',
+            variant: 'gold' as const,
+          }
+        : {
+            title: '¿Publicar en Día de la Fiesta?',
+            description:
+              'Esta fotografía aparecerá inmediatamente en Día de la Fiesta y en el proyector en vivo del salón.',
+            confirmText: 'Sí, publicar en vivo',
+            variant: 'gold' as const,
+          };
+
+    const ok = await confirm(confirmMeta);
+    if (!ok) return;
+
     try {
       const res = await api.moderateMedia(mediaId, estado, restaurarPrivacidad);
       showToast(res.message);
@@ -206,6 +257,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   const handleMoveStoryboardItem = async (fromIdx: number, toIdx: number) => {
     if (toIdx < 0 || toIdx >= storyboard.length) return;
+    const targetItem = storyboard[fromIdx];
+    const ok = await confirm({
+      title: '¿Cambiar orden en el video?',
+      description: `Se moverá "${targetItem?.pie_de_foto || 'esta escena'}" a la posición #${String(toIdx + 1).padStart(3, '0')} del Storyboard.`,
+      confirmText: 'Sí, mover escena',
+      variant: 'gold',
+    });
+    if (!ok) return;
+
     const updated = [...storyboard];
     const [moved] = updated.splice(fromIdx, 1);
     updated.splice(toIdx, 0, moved);
@@ -229,6 +289,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   };
 
   const handleDurationChange = async (idx: number, seconds: number) => {
+    const ok = await confirm({
+      title: '¿Modificar duración de escena?',
+      description: `La escena #${String(idx + 1).padStart(3, '0')} permanecerá ${seconds} segundos en pantalla durante el video.`,
+      confirmText: 'Sí, cambiar duración',
+      variant: 'gold',
+    });
+    if (!ok) return;
+
     const updated = [...storyboard];
     updated[idx] = { ...updated[idx], duracion_display_seg: seconds };
     setStoryboard(updated);
@@ -238,21 +306,98 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         duracion_display_seg: item.duracion_display_seg,
       }))
     );
+    showToast(`Duración actualizada a ${seconds} segundos.`);
   };
 
-  const handleExportZip = async () => {
-    setExportingZip(true);
+  const handleExportZip = async (scope: 'STORYBOARD' | 'FIESTA' | 'FOTOGRAFO' = 'STORYBOARD') => {
+    setExportingScope(scope);
     try {
-      await api.downloadSequentialZip();
-      showToast('Archivo ZIP ordenado (001, 002...) descargado.');
+      await api.downloadSequentialZip(scope);
+      const label =
+        scope === 'FIESTA'
+          ? 'Paquete ZIP de Día de la Fiesta descargado.'
+          : scope === 'FOTOGRAFO'
+          ? 'Paquete ZIP del Fotógrafo Oficial descargado.'
+          : 'Archivo ZIP ordenado (001, 002...) descargado.';
+      showToast(label);
     } catch (err: any) {
       showToast(err.message || 'Error al exportar el archivo ZIP.');
     } finally {
-      setExportingZip(false);
+      setExportingScope(null);
+    }
+  };
+
+  const handleDownloadBackup = async () => {
+    setDownloadingBackup(true);
+    try {
+      await api.downloadDatabaseBackup();
+      showToast('Respaldo íntegro de la base de datos (.db) descargado.');
+    } catch (err: any) {
+      showToast(err.message || 'No se pudo generar el respaldo de seguridad.');
+    } finally {
+      setDownloadingBackup(false);
+    }
+  };
+
+  const handleStartEditUser = (u: AdminOverviewResponse['users'][number]) => {
+    setEditingUserId(u.id);
+    setEditGuestName(u.nombre_completo);
+    setEditGuestBadge(u.distintivo_homonimo || '');
+    setEditGuestMesa(u.mesa || '');
+  };
+
+  const handleSaveEditUser = async (userId: string) => {
+    if (!editGuestName.trim()) return;
+    const ok = await confirm({
+      title: '¿Guardar cambios del invitado?',
+      description: `Se actualizarán los datos de "${editGuestName.trim()}" en la mesa "${editGuestMesa.trim() || 'Mesa por asignar'}".`,
+      confirmText: 'Sí, guardar cambios',
+      variant: 'gold',
+    });
+    if (!ok) return;
+
+    try {
+      const res = await api.updateUser(userId, {
+        nombre_completo: editGuestName.trim(),
+        distintivo_homonimo: editGuestBadge.trim(),
+        mesa: editGuestMesa.trim(),
+      });
+      setEditingUserId(null);
+      showToast(res.message);
+      await fetchOverview();
+    } catch (err: any) {
+      showToast(err.message || 'Error al guardar cambios del invitado.');
+    }
+  };
+
+  const handleDeleteUser = async (u: AdminOverviewResponse['users'][number]) => {
+    const ok = await confirm({
+      title: '¿Retirar invitado del padrón?',
+      description: `Se retirará a "${u.nombre_completo}" del padrón oficial activo.`,
+      confirmText: 'Sí, retirar',
+      variant: 'danger',
+    });
+    if (!ok) return;
+    try {
+      const res = await api.deleteUser(u.id);
+      showToast(res.message);
+      await fetchOverview();
+    } catch (err: any) {
+      showToast(err.message || 'No se pudo eliminar el registro.');
     }
   };
 
   const handleResetPin = async (userId: string) => {
+    const targetUser = data?.users.find((u) => u.id === userId);
+    const ok = await confirm({
+      title: '¿Restablecer PIN de acceso?',
+      description: `Se borrará el PIN actual de ${
+        targetUser ? `"${targetUser.nombre_completo}"` : 'este invitado'
+      }. En su próximo ingreso deberá registrar uno nuevo de 4 dígitos.`,
+      confirmText: 'Sí, borrar PIN',
+      variant: 'warning',
+    });
+    if (!ok) return;
     try {
       const res = await api.resetUserPin(userId);
       showToast(res.message);
@@ -320,6 +465,21 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   };
 
   const handleUpdatePhase = async (fase: EventFase, subidasAbiertas: boolean) => {
+    const phaseLabel =
+      fase === 'EN_VIVO'
+        ? 'Día de la Fiesta (En Vivo)'
+        : fase === 'MEMORIA'
+        ? 'Fiesta Terminada (Solo lectura invitados)'
+        : 'Antes de la Fiesta (Solo Memorias)';
+
+    const ok = await confirm({
+      title: '¿Cambiar fase del evento?',
+      description: `Se activará la fase "${phaseLabel}" para todos los invitados conectados. Esto abrirá y cerrará automáticamente los formularios de subida correspondientes.`,
+      confirmText: 'Sí, cambiar fase',
+      variant: 'warning',
+    });
+    if (!ok) return;
+
     try {
       const res = await api.updateConfig({
         fase_actual: fase,
@@ -334,6 +494,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   };
 
   const handleToggleAutoModeration = async (enabled: boolean) => {
+    const ok = await confirm({
+      title: enabled
+        ? '¿Activar publicación directa en la fiesta?'
+        : '¿Desactivar publicación directa?',
+      description: enabled
+        ? 'Las fotos que suban los invitados durante la fiesta pasarán de inmediato al proyector gigante sin requerir aprobación previa.'
+        : 'Las nuevas fotos de la fiesta quedarán pendientes hasta que una organizadora las autorice desde el panel.',
+      confirmText: enabled ? 'Sí, activar directo' : 'Sí, desactivar',
+      variant: 'warning',
+    });
+    if (!ok) return;
+
     try {
       const res = await api.updateConfig({
         moderacion_automatica_qr: enabled,
@@ -415,18 +587,113 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         )}
       </AnimatePresence>
 
-      {/* Cabecera clara del Panel de Organizadoras */}
-      <div className="p-6 rounded-2xl glass">
-        <span className="text-[11px] uppercase tracking-[0.25em] text-gala-gold font-semibold inline-flex items-center gap-1.5">
-          <Sparkles className="w-3.5 h-3.5 text-gala-silver" />
-          Exclusivo para Organizadoras · El inicio de nuestra historia
-        </span>
-        <h2 className="font-serif text-3xl text-gala-ivory mt-1">
-          Centro de Control de la Graduación
-        </h2>
-        <p className="text-xs sm:text-sm text-gala-parchment/85 mt-1">
-          Elige abajo qué tarea quieres realizar: aprobar fotos recibidas, ordenar el video conmemorativo, borrar un PIN olvidado o abrir/cerrar las subidas.
-        </p>
+      {/* Cabecera Ejecutiva + Resumen Operativo de la Gala */}
+      <div className="p-5 sm:p-6 rounded-2xl glass space-y-5">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div>
+            <span className="font-display text-[10.5px] uppercase tracking-[0.22em] text-gala-gold font-semibold inline-flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5 text-gala-silver" />
+              Centro de Control del Comité · TECNM
+            </span>
+            <h2 className="font-serif font-semibold text-2xl sm:text-3xl text-gala-ivory mt-1">
+              Tablero Ejecutivo de la Graduación
+            </h2>
+            <p className="text-xs sm:text-sm text-gala-parchment/85 mt-0.5">
+              Supervisa aprobaciones, ordena el video, administra mesas del padrón, genera carteles QR y descarga respaldos.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            disabled={downloadingBackup}
+            onClick={handleDownloadBackup}
+            className="px-4 py-2.5 rounded-xl btn-silver text-xs font-semibold text-gala-champagne flex items-center gap-2 shrink-0 disabled:opacity-50"
+            title="Descargar copia de seguridad completa de la base de datos"
+          >
+            <Database className="w-4 h-4 text-gala-gold" />
+            <span>{downloadingBackup ? 'Respaldando...' : 'Respaldo DB (.db)'}</span>
+          </button>
+        </div>
+
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <button
+            type="button"
+            onClick={() => {
+              setActiveSubTab('MODERATION');
+              setStatusFilter('PENDIENTE');
+            }}
+            className="p-3.5 rounded-xl bg-gala-obsidian/70 hover:bg-gala-surface/70 border border-gala-silver/15 text-left transition"
+          >
+            <div className="flex items-center justify-between text-[11px] text-gala-muted uppercase tracking-wider">
+              <span>Por revisar</span>
+              {data.stats.pendientes > 0 && (
+                <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+              )}
+            </div>
+            <div className="font-mono tabular-nums text-2xl font-bold text-gala-champagne mt-1">
+              {data.stats.pendientes}
+            </div>
+            <div className="text-[11px] text-gala-silver/75 mt-0.5">
+              {data.stats.solicitudes_retiro > 0
+                ? `${data.stats.solicitudes_retiro} retiro(s) pendiente(s)`
+                : 'Fotos esperando revisión'}
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setActiveSubTab('MODERATION');
+              setStatusFilter('APROBADO_GALERIA');
+            }}
+            className="p-3.5 rounded-xl bg-gala-obsidian/70 hover:bg-gala-surface/70 border border-gala-silver/15 text-left transition"
+          >
+            <div className="flex items-center justify-between text-[11px] text-gala-muted uppercase tracking-wider">
+              <span>En Vivo Fiesta</span>
+              <Tv className="w-3.5 h-3.5 text-gala-gold" />
+            </div>
+            <div className="font-mono tabular-nums text-2xl font-bold text-gala-ivory mt-1">
+              {data.stats.aprobados_galeria}
+            </div>
+            <div className="text-[11px] text-emerald-300/90 mt-0.5">
+              {data.stats.pantallas_conectadas} pantalla(s) conectada(s)
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveSubTab('STORYBOARD')}
+            className="p-3.5 rounded-xl bg-gala-obsidian/70 hover:bg-gala-surface/70 border border-gala-silver/15 text-left transition"
+          >
+            <div className="flex items-center justify-between text-[11px] text-gala-muted uppercase tracking-wider">
+              <span>Video Memoria</span>
+              <Film className="w-3.5 h-3.5 text-gala-gold" />
+            </div>
+            <div className="font-mono tabular-nums text-2xl font-bold text-gala-ivory mt-1">
+              {data.stats.aprobados_video}
+            </div>
+            <div className="text-[11px] text-gala-silver/75 mt-0.5">
+              Escenas listas para proyectar
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveSubTab('USERS')}
+            className="p-3.5 rounded-xl bg-gala-obsidian/70 hover:bg-gala-surface/70 border border-gala-silver/15 text-left transition"
+          >
+            <div className="flex items-center justify-between text-[11px] text-gala-muted uppercase tracking-wider">
+              <span>Padrón Activo</span>
+              <Users className="w-3.5 h-3.5 text-gala-gold" />
+            </div>
+            <div className="font-mono tabular-nums text-2xl font-bold text-gala-ivory mt-1">
+              {data.users.length}
+            </div>
+            <div className="text-[11px] text-gala-silver/75 mt-0.5">
+              {data.users.filter((u) => u.tiene_pin).length} con PIN registrado
+            </div>
+          </button>
+        </div>
       </div>
 
       {/* 5 Pestañas Numeradas y Claras */}
@@ -783,12 +1050,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
               <button
                 type="button"
-                disabled={exportingZip || storyboard.length === 0}
-                onClick={handleExportZip}
-                className="px-4 py-2.5 rounded-xl btn-gold text-gala-obsidian font-semibold text-xs flex items-center gap-2 transition shadow-lg"
+                disabled={exportingScope !== null || storyboard.length === 0}
+                onClick={() => handleExportZip('STORYBOARD')}
+                className="px-4 py-2.5 rounded-xl btn-gold text-gala-obsidian font-semibold text-xs flex items-center gap-2 transition shadow-lg disabled:opacity-50"
               >
                 <Download className="w-4 h-4" />
-                {exportingZip ? 'Creando ZIP...' : 'Descargar ZIP Ordenado'}
+                {exportingScope === 'STORYBOARD' ? 'Creando ZIP...' : 'Descargar ZIP Ordenado'}
               </button>
             </div>
           </div>
@@ -884,48 +1151,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             })}
           </div>
 
-          {/* Interruptor de Publicación Automática en Fiesta */}
-          <div className="pt-6 border-t border-gala-silver/15 space-y-3">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-xl bg-gala-obsidian/85 border border-gala-silver/20">
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <span className="font-serif text-lg text-gala-ivory">
-                    Publicación Directa en la Fiesta (Sin revisión previa)
-                  </span>
-                  <span
-                    className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase ${
-                      data.config.moderacion_automatica_qr
-                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                        : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
-                    }`}
-                  >
-                    {data.config.moderacion_automatica_qr ? 'Activada' : 'Desactivada'}
-                  </span>
-                </div>
-                <p className="text-xs text-gala-parchment/80 max-w-xl">
-                  {data.config.moderacion_automatica_qr
-                    ? 'Recomendado para la noche del evento: las fotos que suban los invitados entran de inmediato al carrusel y al proyector sin que las organizadoras tengan que autorizarlas una por una.'
-                    : 'Modo seguro: cada foto de la fiesta queda pendiente hasta que una organizadora la autorice desde la pestaña 1.'}
-                </p>
-              </div>
-
-              <button
-                type="button"
-                onClick={() =>
-                  handleToggleAutoModeration(!data.config.moderacion_automatica_qr)
-                }
-                className={`px-5 py-2.5 rounded-xl text-xs font-semibold shrink-0 transition shadow ${
-                  data.config.moderacion_automatica_qr
-                    ? 'btn-silver text-gala-ivory'
-                    : 'btn-gold text-gala-obsidian'
-                }`}
-              >
-                {data.config.moderacion_automatica_qr
-                  ? 'Desactivar Publicación Directa'
-                  : 'Activar Publicación Directa'}
-              </button>
-            </div>
-          </div>
         </div>
       )}
 
@@ -1029,43 +1254,127 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
 
             <div className="space-y-2">
-              {paginatedUsers.map((u) => (
-                <div
-                  key={u.id}
-                  className="p-3 rounded-xl bg-gala-obsidian/85 border border-gala-silver/15 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
-                >
-                  <div>
-                    <div className="text-sm font-medium text-gala-ivory">
-                      {u.nombre_completo}
-                    </div>
-                    <div className="text-xs text-gala-muted">
-                      {u.distintivo_homonimo} · {u.mesa}
+              {paginatedUsers.map((u) => {
+                const isEditing = editingUserId === u.id;
+                return (
+                  <div
+                    key={u.id}
+                    className="p-3 rounded-xl bg-gala-obsidian/85 border border-gala-silver/15 flex flex-col gap-3"
+                  >
+                    {isEditing ? (
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                        <input
+                          type="text"
+                          value={editGuestName}
+                          onChange={(e) => setEditGuestName(e.target.value)}
+                          placeholder="Nombre completo"
+                          className="px-3 py-1.5 rounded-lg bg-gala-velvet border border-gala-gold/40 text-xs text-gala-ivory"
+                        />
+                        <input
+                          type="text"
+                          value={editGuestBadge}
+                          onChange={(e) => setEditGuestBadge(e.target.value)}
+                          placeholder="Carrera / Distintivo"
+                          className="px-3 py-1.5 rounded-lg bg-gala-velvet border border-gala-silver/25 text-xs text-gala-ivory"
+                        />
+                        <input
+                          type="text"
+                          value={editGuestMesa}
+                          onChange={(e) => setEditGuestMesa(e.target.value)}
+                          placeholder="Mesa (ej. Mesa 04)"
+                          className="px-3 py-1.5 rounded-lg bg-gala-velvet border border-gala-silver/25 text-xs text-gala-ivory"
+                        />
+                      </div>
+                    ) : null}
+
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                      {!isEditing ? (
+                        <div>
+                          <div className="text-sm font-medium text-gala-ivory flex items-center gap-2">
+                            <span>{u.nombre_completo}</span>
+                            {u.rol === 'ADMIN' && (
+                              <span className="px-1.5 py-0.5 rounded bg-gala-gold/20 border border-gala-gold/40 text-[9px] font-mono uppercase text-gala-champagne">
+                                Comité
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-xs text-gala-muted">
+                            {u.distintivo_homonimo || 'Graduado'} ·{' '}
+                            <strong className="text-gala-champagne/90">{u.mesa || 'Sin mesa'}</strong>
+                          </div>
+                        </div>
+                      ) : (
+                        <span className="text-[11px] text-gala-gold font-mono">
+                          Editando datos de {u.nombre_completo}
+                        </span>
+                      )}
+
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {isEditing ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => handleSaveEditUser(u.id)}
+                              className="px-3 py-1.5 rounded-lg btn-gold text-gala-obsidian font-semibold text-xs flex items-center gap-1"
+                            >
+                              <Check className="w-3.5 h-3.5" /> Guardar
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEditingUserId(null)}
+                              className="px-3 py-1.5 rounded-lg bg-gala-surface border border-gala-silver/25 text-xs text-gala-silver"
+                            >
+                              Cancelar
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <span
+                              className={`text-[11px] px-2.5 py-1 rounded-md border ${
+                                u.tiene_pin
+                                  ? 'bg-emerald-950/60 border-emerald-500/30 text-emerald-300'
+                                  : 'bg-gala-surface border-gala-silver/20 text-gala-muted'
+                              }`}
+                            >
+                              {u.tiene_pin ? 'Tiene PIN' : 'Sin PIN'}
+                            </span>
+
+                            <button
+                              type="button"
+                              onClick={() => handleStartEditUser(u)}
+                              className="p-1.5 rounded-lg bg-gala-surface hover:bg-gala-card border border-gala-silver/25 text-gala-champagne transition"
+                              title="Editar nombre, carrera o mesa"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                            </button>
+
+                            {u.tiene_pin && (
+                              <button
+                                type="button"
+                                onClick={() => handleResetPin(u.id)}
+                                className="px-2.5 py-1.5 rounded-lg bg-gala-surface hover:bg-red-950/80 border border-gala-silver/30 text-xs text-gala-champagne flex items-center gap-1 transition"
+                              >
+                                <RotateCcw className="w-3.5 h-3.5" /> Borrar PIN
+                              </button>
+                            )}
+
+                            {u.rol !== 'ADMIN' && (
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteUser(u)}
+                                className="p-1.5 rounded-lg bg-red-950/60 hover:bg-red-900 border border-red-500/30 text-red-300 transition"
+                                title="Eliminar duplicado o dar de baja"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </>
+                        )}
+                      </div>
                     </div>
                   </div>
-
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={`text-[11px] px-2.5 py-1 rounded-md border ${
-                        u.tiene_pin
-                          ? 'bg-emerald-950/60 border-emerald-500/30 text-emerald-300'
-                          : 'bg-gala-surface border-gala-silver/20 text-gala-muted'
-                      }`}
-                    >
-                      {u.tiene_pin ? 'Tiene PIN' : 'Sin PIN todavía'}
-                    </span>
-
-                    {u.tiene_pin && (
-                      <button
-                        type="button"
-                        onClick={() => handleResetPin(u.id)}
-                        className="px-3 py-1.5 rounded-lg bg-gala-surface hover:bg-red-950/80 border border-gala-silver/30 text-xs text-gala-champagne flex items-center gap-1.5 transition"
-                      >
-                        <RotateCcw className="w-3.5 h-3.5" /> Borrar PIN
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             <PaginationBar
@@ -1192,6 +1501,92 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 {data.config.moderacion_automatica_qr
                   ? 'Desactivar Publicación Directa'
                   : 'Activar Publicación Directa'}
+              </button>
+            </div>
+          </div>
+
+          {/* Exportación Completa Post-Evento (ZIPs por Categoría) y Respaldo de Base de Datos */}
+          <div className="pt-6 border-t border-gala-silver/15 space-y-3">
+            <div>
+              <h3 className="font-serif text-xl text-gala-ivory">
+                Exportación Masiva (ZIP) y Respaldo del Evento
+              </h3>
+              <p className="text-xs text-gala-parchment/80 mt-0.5">
+                Descarga paquetes completos por sección en calidad original o guarda una copia íntegra de la base de datos.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              <button
+                type="button"
+                disabled={exportingScope !== null || storyboard.length === 0}
+                onClick={() => handleExportZip('STORYBOARD')}
+                className="p-4 rounded-xl bg-gala-obsidian/80 hover:bg-gala-surface/70 border border-gala-silver/20 text-left space-y-1.5 transition disabled:opacity-45"
+              >
+                <div className="flex items-center justify-between text-gala-gold">
+                  <Film className="w-4 h-4" />
+                  <Download className="w-3.5 h-3.5" />
+                </div>
+                <div className="text-xs font-semibold text-gala-ivory">
+                  {exportingScope === 'STORYBOARD' ? 'Comprimiendo...' : 'ZIP Video Memoria'}
+                </div>
+                <div className="text-[11px] text-gala-muted">
+                  {storyboard.length} archivos numerados (001...)
+                </div>
+              </button>
+
+              <button
+                type="button"
+                disabled={exportingScope !== null || data.stats.aprobados_galeria === 0}
+                onClick={() => handleExportZip('FIESTA')}
+                className="p-4 rounded-xl bg-gala-obsidian/80 hover:bg-gala-surface/70 border border-gala-silver/20 text-left space-y-1.5 transition disabled:opacity-45"
+              >
+                <div className="flex items-center justify-between text-gala-gold">
+                  <FolderArchive className="w-4 h-4" />
+                  <Download className="w-3.5 h-3.5" />
+                </div>
+                <div className="text-xs font-semibold text-gala-ivory">
+                  {exportingScope === 'FIESTA' ? 'Comprimiendo...' : 'ZIP Día de la Fiesta'}
+                </div>
+                <div className="text-[11px] text-gala-muted">
+                  {data.stats.aprobados_galeria} fotos de mesas en vivo
+                </div>
+              </button>
+
+              <button
+                type="button"
+                disabled={exportingScope !== null}
+                onClick={() => handleExportZip('FOTOGRAFO')}
+                className="p-4 rounded-xl bg-gala-obsidian/80 hover:bg-gala-surface/70 border border-gala-silver/20 text-left space-y-1.5 transition disabled:opacity-45"
+              >
+                <div className="flex items-center justify-between text-gala-gold">
+                  <Camera className="w-4 h-4" />
+                  <Download className="w-3.5 h-3.5" />
+                </div>
+                <div className="text-xs font-semibold text-gala-ivory">
+                  {exportingScope === 'FOTOGRAFO' ? 'Comprimiendo...' : 'ZIP Fotógrafo Oficial'}
+                </div>
+                <div className="text-[11px] text-gala-muted">
+                  Todas las tomas profesionales HD
+                </div>
+              </button>
+
+              <button
+                type="button"
+                disabled={downloadingBackup}
+                onClick={handleDownloadBackup}
+                className="p-4 rounded-xl bg-gala-obsidian/80 hover:bg-gala-surface/70 border border-gala-gold/30 text-left space-y-1.5 transition disabled:opacity-45"
+              >
+                <div className="flex items-center justify-between text-gala-champagne">
+                  <Database className="w-4 h-4 text-gala-gold" />
+                  <Download className="w-3.5 h-3.5" />
+                </div>
+                <div className="text-xs font-semibold text-gala-champagne">
+                  {downloadingBackup ? 'Exportando DB...' : 'Respaldo Base de Datos'}
+                </div>
+                <div className="text-[11px] text-gala-muted">
+                  Copia íntegra SQLite (.db)
+                </div>
               </button>
             </div>
           </div>

@@ -2,7 +2,7 @@ const express = require('express');
 const path = require('node:path');
 const fs = require('node:fs');
 const crypto = require('node:crypto');
-const { db, STORAGE_UPLOADS_DIR } = require('../db/database');
+const { db, DB_PATH, STORAGE_UPLOADS_DIR, STORAGE_EXPORTS_DIR } = require('../db/database');
 const { requireAdmin } = require('./auth');
 const { normalizeText } = require('../utils/security');
 const { buildZipBuffer } = require('../utils/zipBuilder');
@@ -76,7 +76,7 @@ router.get('/overview', requireAdmin, (_req, res) => {
       COUNT(m.id) as total_subidas
     FROM User u
     LEFT JOIN MediaItem m ON m.usuario_id = u.id
-    WHERE u.activo = 1
+    WHERE u.activo = 1 AND u.rol IN ('ALUMNO', 'ADMIN')
     GROUP BY u.id
     ORDER BY u.rol DESC, u.nombre_completo ASC
   `).all().map((u) => ({
@@ -221,10 +221,101 @@ router.put('/storyboard/reorder', requireAdmin, (req, res) => {
 });
 
 /**
- * 4. Exportación en ZIP con renombrado secuencial automático (001_foto.jpg, 002_clip.mp4)
- * GET /api/admin/export-zip
+ * 4. Exportación en ZIP con renombrado secuencial automático
+ * GET /api/admin/export-zip?scope=STORYBOARD|FIESTA|FOTOGRAFO
  */
-router.get('/export-zip', requireAdmin, (_req, res) => {
+router.get('/export-zip', requireAdmin, (req, res) => {
+  const scope = String(req.query.scope || 'STORYBOARD').toUpperCase();
+
+  if (scope === 'FIESTA' || scope === 'FOTOGRAFO') {
+    const isFiesta = scope === 'FIESTA';
+    const rows = isFiesta
+      ? db.prepare(`
+          SELECT
+            m.*,
+            u.nombre_completo as autor_nombre,
+            u.distintivo_homonimo as autor_distintivo,
+            u.mesa as autor_mesa,
+            COALESCE((SELECT COUNT(*) FROM MediaReaction r WHERE r.media_item_id = m.id), 0) as reacciones_total
+          FROM MediaItem m
+          JOIN User u ON u.id = m.usuario_id
+          WHERE m.estado = 'APROBADO_GALERIA' AND m.solicitud_retiro = 0
+          ORDER BY m.created_at ASC
+        `).all()
+      : db.prepare(`
+          SELECT
+            m.*,
+            u.nombre_completo as autor_nombre,
+            u.distintivo_homonimo as autor_distintivo,
+            u.mesa as autor_mesa,
+            COALESCE((SELECT COUNT(*) FROM MediaReaction r WHERE r.media_item_id = m.id), 0) as reacciones_total
+          FROM MediaItem m
+          JOIN User u ON u.id = m.usuario_id
+          WHERE (
+            m.estado = 'APROBADO_FOTOGRAFO' OR
+            (m.origen = 'FOTOGRAFO' AND m.estado NOT IN ('APROBADO_VIDEO', 'APROBADO_GALERIA', 'RECHAZADO'))
+          )
+          AND m.solicitud_retiro = 0
+          ORDER BY m.created_at ASC
+        `).all();
+
+    const zipEntries = [];
+    const titleLabel = isFiesta ? 'DIA DE LA FIESTA EN VIVO' : 'ALBUM DEL FOTOGRAFO OFICIAL';
+    const manifestLines = [
+      '========================================================================',
+      `${titleLabel} - GRADUACION TECNM`,
+      `Generado el: ${new Date().toLocaleString('es-MX')}`,
+      `Total de archivos incluidos: ${rows.length}`,
+      '========================================================================',
+      '',
+    ];
+
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      const seqPrefix = String(i + 1).padStart(3, '0');
+      const diskFilename = path.basename(row.archivo_url);
+      const fullPath = path.join(STORAGE_UPLOADS_DIR, diskFilename);
+      const ext = path.extname(diskFilename) || (row.tipo_medio === 'VIDEO' ? '.mp4' : '.jpg');
+      const cleanMesa = String(row.autor_mesa || 'Gala')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^A-Z0-9]+/gi, '_');
+      const exportFilename = isFiesta
+        ? `${seqPrefix}_${cleanMesa}_${row.tipo_medio === 'VIDEO' ? 'clip' : 'foto'}${ext}`
+        : `${seqPrefix}_Oficial${ext}`;
+
+      if (fs.existsSync(fullPath)) {
+        zipEntries.push({
+          name: exportFilename,
+          data: fs.readFileSync(fullPath),
+        });
+      }
+
+      manifestLines.push(
+        `[${seqPrefix}] Archivo: ${exportFilename}`,
+        `      Autor: ${row.autor_nombre} (${row.autor_mesa || row.autor_distintivo || 'Invitado'})`,
+        `      Reacciones: ${row.reacciones_total || 0}`,
+        `      Dedicatoria: "${row.pie_de_foto}"`,
+        ''
+      );
+    }
+
+    zipEntries.unshift({
+      name: isFiesta ? '000_INDICE_FIESTA.txt' : '000_INDICE_FOTOGRAFO.txt',
+      data: Buffer.from(manifestLines.join('\n'), 'utf8'),
+    });
+
+    const zipBuffer = buildZipBuffer(zipEntries);
+    const outName = isFiesta
+      ? 'Dia_De_La_Fiesta_TECNM.zip'
+      : 'Album_Fotografo_Oficial_TECNM.zip';
+
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="${outName}"`);
+    res.setHeader('Content-Length', zipBuffer.length);
+    return res.send(zipBuffer);
+  }
+
   const storyboard = db.prepare(`
     SELECT
       s.orden,
@@ -304,6 +395,56 @@ router.get('/export-zip', requireAdmin, (_req, res) => {
 });
 
 /**
+ * 4b. Respaldo íntegro de la base de datos SQLite en un solo archivo descargable
+ * GET /api/admin/backup-db
+ */
+router.get('/backup-db', requireAdmin, (_req, res) => {
+  const tempBackupPath = path.join(
+    STORAGE_EXPORTS_DIR,
+    `backup_graduacion_${Date.now()}_${crypto.randomUUID().slice(0, 6)}.db`
+  );
+
+  try {
+    const safeSqlPath = tempBackupPath.replace(/'/g, "''");
+    db.exec(`VACUUM INTO '${safeSqlPath}'`);
+    const dbBuffer = fs.readFileSync(tempBackupPath);
+    const dateStamp = new Date().toISOString().slice(0, 10);
+
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="Respaldo_Graduacion_TECNM_${dateStamp}.db"`
+    );
+    res.setHeader('Content-Length', dbBuffer.length);
+    return res.send(dbBuffer);
+  } catch {
+    // Respaldo alterno directo tras checkpoint WAL si VACUUM INTO fallara
+    try {
+      db.exec('PRAGMA wal_checkpoint(TRUNCATE);');
+      const fallbackBuffer = fs.readFileSync(DB_PATH);
+      const dateStamp = new Date().toISOString().slice(0, 10);
+      res.setHeader('Content-Type', 'application/octet-stream');
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="Respaldo_Graduacion_TECNM_${dateStamp}.db"`
+      );
+      res.setHeader('Content-Length', fallbackBuffer.length);
+      return res.send(fallbackBuffer);
+    } catch (err) {
+      return res.status(500).json({ error: 'No fue posible generar el respaldo de la base de datos.' });
+    }
+  } finally {
+    if (fs.existsSync(tempBackupPath)) {
+      try {
+        fs.unlinkSync(tempBackupPath);
+      } catch {
+        // Ignorar limpieza temporal
+      }
+    }
+  }
+});
+
+/**
  * 5. Restablecer el PIN de cualquier alumno con un solo clic
  * POST /api/admin/users/:id/reset-pin
  */
@@ -364,6 +505,80 @@ router.post('/users', requireAdmin, (req, res) => {
   return res.status(201).json({
     message: `Se agregaron ${createdCount} invitado(s) al padrón oficial.`,
     createdCount,
+  });
+});
+
+/**
+ * 6b. Editar datos de un alumno/invitado (nombre, carrera/grupo, mesa, rol)
+ * PATCH /api/admin/users/:id
+ */
+router.patch('/users/:id', requireAdmin, (req, res) => {
+  const { id } = req.params;
+  const existing = db.prepare('SELECT * FROM User WHERE id = ? AND activo = 1').get(id);
+  if (!existing) {
+    return res.status(404).json({ error: 'Invitado no encontrado en el padrón.' });
+  }
+
+  const nextNombre =
+    req.body.nombre_completo !== undefined
+      ? String(req.body.nombre_completo).trim()
+      : existing.nombre_completo;
+  if (!nextNombre) {
+    return res.status(400).json({ error: 'El nombre completo no puede estar vacío.' });
+  }
+
+  const nextDistintivo =
+    req.body.distintivo_homonimo !== undefined
+      ? String(req.body.distintivo_homonimo || '').trim() || null
+      : existing.distintivo_homonimo;
+  const nextMesa =
+    req.body.mesa !== undefined
+      ? String(req.body.mesa || '').trim() || 'Mesa por asignar'
+      : existing.mesa;
+  const nextRol =
+    req.body.rol === 'ADMIN' || req.body.rol === 'ALUMNO' ? req.body.rol : existing.rol;
+
+  const now = new Date().toISOString();
+  db.prepare(`
+    UPDATE User
+    SET nombre_completo = ?, nombre_normalizado = ?, distintivo_homonimo = ?, mesa = ?, rol = ?, updated_at = ?
+    WHERE id = ?
+  `).run(
+    nextNombre,
+    normalizeText(`${nextNombre} ${nextDistintivo || ''}`),
+    nextDistintivo,
+    nextMesa,
+    nextRol,
+    now,
+    id
+  );
+
+  return res.json({
+    message: `Datos de ${nextNombre} actualizados correctamente.`,
+  });
+});
+
+/**
+ * 6c. Dar de baja / eliminar registro duplicado del padrón
+ * DELETE /api/admin/users/:id
+ */
+router.delete('/users/:id', requireAdmin, (req, res) => {
+  const { id } = req.params;
+  if (id === req.user.id) {
+    return res.status(400).json({ error: 'No puedes eliminar tu propia cuenta de organizadora activa.' });
+  }
+
+  const existing = db.prepare('SELECT id, nombre_completo FROM User WHERE id = ? AND activo = 1').get(id);
+  if (!existing) {
+    return res.status(404).json({ error: 'Invitado no encontrado en el padrón.' });
+  }
+
+  const now = new Date().toISOString();
+  db.prepare('UPDATE User SET activo = 0, updated_at = ? WHERE id = ?').run(now, id);
+
+  return res.json({
+    message: `${existing.nombre_completo} fue retirado(a) del padrón activo.`,
+    userId: id,
   });
 });
 

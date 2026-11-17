@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -22,6 +22,7 @@ import {
   RotateCcw,
   Search,
   Heart,
+  Award,
 } from 'lucide-react';
 import { MediaItem, SystemConfig, User, MediaEtapa } from '../types';
 import { api } from '../services/api';
@@ -32,6 +33,8 @@ import {
 } from '../utils/imageCompression';
 import { PaginationBar } from './PaginationBar';
 import { StageBackground } from './StageBackground';
+import { EditorialLightbox } from './EditorialLightbox';
+import { useGalaConfirm } from './GalaConfirmModal';
 
 interface MemoryGalleryProps {
   items: MediaItem[];
@@ -39,6 +42,7 @@ interface MemoryGalleryProps {
   currentUser: User | null;
   onRequireAuth: () => void;
   onRefresh: () => void;
+  openUploadTrigger?: number;
 }
 
 const ETAPAS: Array<{ id: MediaEtapa; title: string; desc: string }> = [
@@ -65,13 +69,20 @@ export const MemoryGallery: React.FC<MemoryGalleryProps> = ({
   currentUser,
   onRequireAuth,
   onRefresh,
+  openUploadTrigger = 0,
 }) => {
+  const confirm = useGalaConfirm();
   // En Modo Memoria se muestran EXCLUSIVAMENTE las fotos y videos cuyo estatus actual es "APROBADO_VIDEO" ("Al Video")
-  const videoMemories = items.filter((i) => i.estado === 'APROBADO_VIDEO');
+  const videoMemories = useMemo(
+    () => items.filter((i) => i.estado === 'APROBADO_VIDEO'),
+    [items]
+  );
 
   const [etapaFilter, setEtapaFilter] = useState<'TODAS' | MediaEtapa>('TODAS');
+  const [sortMode, setSortMode] = useState<'STORYBOARD' | 'TOP_REACTIONS'>('STORYBOARD');
   const [searchQuery, setSearchQuery] = useState('');
   const [showUploadBox, setShowUploadBox] = useState(false);
+  const [showMyUploads, setShowMyUploads] = useState(false);
 
   // Paginación para evitar saturación visual y lentitud cuando haya muchas fotos
   const [currentPage, setCurrentPage] = useState(1);
@@ -111,17 +122,24 @@ export const MemoryGallery: React.FC<MemoryGalleryProps> = ({
     Record<string, 'CORAZON' | 'ESTRELLA' | null>
   >({});
 
-  // Sincronizar mis reacciones cuando cargan los recuerdos
+  // Reiniciar reacciones cacheadas si cambia de usuario autenticado
   useEffect(() => {
-    const map: Record<string, 'CORAZON' | 'ESTRELLA' | null> = {};
-    videoMemories.forEach((p) => {
-      if (p.mi_reaccion) {
-        map[p.id] = p.mi_reaccion;
+    setMyReactions({});
+  }, [currentUser?.id]);
+
+  // Sincronizar mis reacciones cuando cargan los recuerdos sin bucles de actualización
+  useEffect(() => {
+    setMyReactions((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const p of videoMemories) {
+        if (p.mi_reaccion !== undefined && next[p.id] === undefined) {
+          next[p.id] = p.mi_reaccion;
+          changed = true;
+        }
       }
+      return changed ? next : prev;
     });
-    if (Object.keys(map).length > 0) {
-      setMyReactions((prev) => ({ ...map, ...prev }));
-    }
   }, [videoMemories]);
 
   const handleReactMemory = async (mediaId: string, tipo: 'CORAZON' | 'ESTRELLA') => {
@@ -212,21 +230,37 @@ export const MemoryGallery: React.FC<MemoryGalleryProps> = ({
       .toLowerCase()
       .trim();
 
-  const filteredMemories = videoMemories.filter((item) => {
-    if (etapaFilter !== 'TODAS' && item.etapa !== etapaFilter) {
-      return false;
-    }
-    const term = normalizeSearch(searchQuery);
-    if (term) {
-      const nameMatch = normalizeSearch(item.autor_nombre || '').includes(term);
-      const badgeMatch = normalizeSearch(item.autor_distintivo || '').includes(term);
-      const captionMatch = normalizeSearch(item.pie_de_foto || '').includes(term);
-      if (!nameMatch && !badgeMatch && !captionMatch) {
+  const getReactionCounts = (item: MediaItem) => ({
+    corazon: localReactions[item.id]?.corazon ?? item.reacciones_corazon ?? 0,
+    estrella: localReactions[item.id]?.estrella ?? item.reacciones_estrella ?? 0,
+  });
+
+  const filteredMemories = (() => {
+    const base = videoMemories.filter((item) => {
+      if (etapaFilter !== 'TODAS' && item.etapa !== etapaFilter) {
         return false;
       }
+      const term = normalizeSearch(searchQuery);
+      if (term) {
+        const nameMatch = normalizeSearch(item.autor_nombre || '').includes(term);
+        const badgeMatch = normalizeSearch(item.autor_distintivo || '').includes(term);
+        const captionMatch = normalizeSearch(item.pie_de_foto || '').includes(term);
+        if (!nameMatch && !badgeMatch && !captionMatch) {
+          return false;
+        }
+      }
+      return true;
+    });
+
+    if (sortMode === 'TOP_REACTIONS') {
+      return [...base].sort((a, b) => {
+        const ac = getReactionCounts(a);
+        const bc = getReactionCounts(b);
+        return bc.corazon + bc.estrella - (ac.corazon + ac.estrella);
+      });
     }
-    return true;
-  });
+    return base;
+  })();
 
   const totalPages = Math.max(1, Math.ceil(filteredMemories.length / pageSize));
   const safePage = Math.min(currentPage, totalPages);
@@ -251,9 +285,9 @@ export const MemoryGallery: React.FC<MemoryGalleryProps> = ({
     loadMyUploads();
   }, [currentUser?.id]);
 
-  // Bloquear scroll del body cuando un modal de pantalla completa esté abierto
+  // Bloquear scroll del body cuando la presentación del Video Conmemorativo esté abierta
   useEffect(() => {
-    if (presentationOpen || selectedViewerIndex !== null) {
+    if (presentationOpen) {
       document.body.style.overflow = 'hidden';
     } else {
       document.body.style.overflow = '';
@@ -261,7 +295,27 @@ export const MemoryGallery: React.FC<MemoryGalleryProps> = ({
     return () => {
       document.body.style.overflow = '';
     };
-  }, [presentationOpen, selectedViewerIndex]);
+  }, [presentationOpen]);
+
+  const handleDeleteMemory = async (item: MediaItem) => {
+    const ok = await confirm({
+      title: '¿Eliminar recuerdo?',
+      description: `Se eliminará "${item.pie_de_foto}". Ya no aparecerá en los recuerdos ni en el video conmemorativo.`,
+      confirmText: 'Sí, eliminar',
+      variant: 'danger',
+    });
+    if (!ok) return;
+    try {
+      await api.deleteMyMedia(item.id);
+      setSelectedViewerIndex(null);
+      setFeedbackBanner('Recuerdo eliminado correctamente.');
+      loadMyUploads();
+      onRefresh();
+      setTimeout(() => setFeedbackBanner(null), 4000);
+    } catch {
+      setFeedbackBanner('No se pudo eliminar el recuerdo.');
+    }
+  };
 
   const currentSlideItem = videoMemories[activeSlide] || videoMemories[0] || null;
   const currentSlideDurationSec = currentSlideItem?.duracion_display_seg || 4;
@@ -282,6 +336,12 @@ export const MemoryGallery: React.FC<MemoryGalleryProps> = ({
       setShowUploadBox(false);
     }
   }, [canUploadMemory, showUploadBox]);
+
+  useEffect(() => {
+    if (openUploadTrigger > 0 && canUploadMemory) {
+      setShowUploadBox(true);
+    }
+  }, [openUploadTrigger, canUploadMemory]);
 
   // Reiniciar barra de progreso cuando cambia de escena
   useEffect(() => {
@@ -423,23 +483,23 @@ export const MemoryGallery: React.FC<MemoryGalleryProps> = ({
       )}
 
       {/* CABECERA PRINCIPAL DE MODO MEMORIA (FOTOS "AL VIDEO" ANTES DE LA FIESTA) */}
-      <div className="p-6 sm:p-8 rounded-2xl glass shadow-xl space-y-5">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5">
-          <div className="space-y-1.5">
-            <span className="text-[11px] uppercase tracking-[0.25em] text-gala-gold font-semibold inline-flex items-center gap-1.5">
+      <div className="p-5 sm:p-6 rounded-2xl glass shadow-xl space-y-4">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div className="space-y-1">
+            <span className="font-display text-[10.5px] uppercase tracking-[0.22em] text-gala-gold font-semibold inline-flex items-center gap-1.5">
               <Sparkles className="w-3.5 h-3.5 text-gala-silver" />
-              Apartado 1 · Antes de la Fiesta (Video Conmemorativo)
+              Video Conmemorativo · 2022 – 2026
             </span>
-            <h2 className="font-serif text-3xl sm:text-4xl text-gala-ivory">
+            <h2 className="font-serif font-semibold text-2xl sm:text-4xl text-gala-ivory">
               Modo Memoria · Recuerdos de la Carrera
             </h2>
-            <p className="text-xs sm:text-sm text-gala-parchment/90 max-w-2xl leading-relaxed">
-              Aquí se reúnen todas las fotografías y clips históricos de la universidad aprobados como <strong>"Al Video"</strong>. Desde aquí puedes presentar el video en pantalla grande o subir tus recuerdos de la carrera.
+            <p className="text-xs sm:text-sm text-gala-parchment/85 max-w-2xl leading-relaxed">
+              Fotografías y clips históricos aprobados para el video de graduación. Puedes presentar la historia completa o compartir tus recuerdos.
             </p>
           </div>
 
           {/* 2 Botones Principales Grandes y Claros */}
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 shrink-0">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 shrink-0">
             <button
               type="button"
               disabled={videoMemories.length === 0}
@@ -449,10 +509,10 @@ export const MemoryGallery: React.FC<MemoryGalleryProps> = ({
                 setIsPlayingVideo(true);
                 setPresentationOpen(true);
               }}
-              className="px-5 py-3.5 rounded-xl btn-gold disabled:opacity-40 text-gala-obsidian font-semibold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg transition"
+              className="px-4 py-3 rounded-xl btn-gold disabled:opacity-40 text-gala-obsidian font-semibold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg transition"
             >
               <Play className="w-4 h-4 fill-current" />
-              <span>Presentar Video en Pantalla Grande</span>
+              <span>Presentar Video en Pantalla</span>
             </button>
 
             {canUploadMemory ? (
@@ -704,11 +764,11 @@ export const MemoryGallery: React.FC<MemoryGalleryProps> = ({
           </div>
         </div>
 
-        {/* Resumen de filtros y botón Ver Una por Una */}
-        <div className="pt-2 border-t border-gala-silver/15 flex flex-wrap items-center justify-between gap-2 text-xs">
+        {/* Resumen de filtros, Top Momentos, Mis Subidas y botón Ver Una por Una */}
+        <div className="pt-2.5 border-t border-gala-silver/15 flex flex-wrap items-center justify-between gap-2 text-xs">
           <div className="flex flex-wrap items-center gap-2 text-gala-silver">
             <span>
-              Mostrando <strong className="text-gala-champagne">{filteredMemories.length}</strong> de {videoMemories.length} recuerdos
+              Mostrando <strong className="text-gala-champagne tabular-nums">{filteredMemories.length}</strong> de {videoMemories.length} recuerdos
             </span>
             {(searchQuery.trim() !== '' || etapaFilter !== 'TODAS') && (
               <button
@@ -720,22 +780,125 @@ export const MemoryGallery: React.FC<MemoryGalleryProps> = ({
                 }}
                 className="px-2 py-0.5 rounded-md bg-gala-velvet border border-gala-silver/30 text-gala-gold text-[11px] font-medium flex items-center gap-1 transition"
               >
-                <RotateCcw className="w-3 h-3" /> Restablecer filtros
+                <RotateCcw className="w-3 h-3" /> Restablecer
               </button>
             )}
           </div>
 
-          {filteredMemories.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
-              onClick={() => setSelectedViewerIndex(0)}
-              className="px-3.5 py-1.5 rounded-xl btn-silver text-xs text-gala-champagne flex items-center gap-1.5 transition"
+              onClick={() => {
+                setSortMode((prev) => (prev === 'STORYBOARD' ? 'TOP_REACTIONS' : 'STORYBOARD'));
+                setCurrentPage(1);
+              }}
+              className={`px-3 py-1.5 rounded-xl text-xs font-semibold border flex items-center gap-1.5 transition ${
+                sortMode === 'TOP_REACTIONS'
+                  ? 'bg-amber-900/55 border-gala-gold text-gala-champagne'
+                  : 'bg-gala-obsidian/70 border-gala-silver/20 text-gala-silver hover:border-gala-gold/50'
+              }`}
+              title="Ordenar por recuerdos más votados"
             >
-              <Eye className="w-3.5 h-3.5 text-gala-gold" /> Ver Memorias Una por Una
+              <Award className="w-3.5 h-3.5 text-gala-gold" />
+              <span>{sortMode === 'TOP_REACTIONS' ? 'Top Momentos Activo' : 'Top Momentos'}</span>
             </button>
-          )}
+
+            {currentUser && myPreEventUploads.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setShowMyUploads((prev) => !prev)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-medium border flex items-center gap-1.5 transition ${
+                  showMyUploads
+                    ? 'bg-gala-gold/20 border-gala-gold text-gala-champagne'
+                    : 'bg-gala-obsidian/70 border-gala-silver/20 text-gala-silver hover:text-gala-ivory'
+                }`}
+              >
+                <Camera className="w-3.5 h-3.5 text-gala-gold" />
+                <span>Mis Subidas ({myPreEventUploads.length})</span>
+              </button>
+            )}
+
+            {filteredMemories.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setSelectedViewerIndex(0)}
+                className="px-3.5 py-1.5 rounded-xl btn-silver text-xs text-gala-champagne flex items-center gap-1.5 transition"
+              >
+                <Eye className="w-3.5 h-3.5 text-gala-gold" /> Abrir Visor
+              </button>
+            )}
+          </div>
         </div>
       </div>
+
+      {/* PANEL DESPLEGABLE: MIS RECUERDOS SUBIDOS */}
+      <AnimatePresence>
+        {showMyUploads && currentUser && myPreEventUploads.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="glass rounded-2xl p-4 sm:p-5 space-y-3 overflow-hidden border border-gala-gold/30"
+          >
+            <div className="flex items-center justify-between">
+              <h3 className="font-serif text-lg text-gala-ivory">
+                Mis Recuerdos Subidos ({myPreEventUploads.length})
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowMyUploads(false)}
+                className="text-xs text-gala-muted hover:text-gala-ivory"
+              >
+                Ocultar
+              </button>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {myPreEventUploads.map((mine) => (
+                <div
+                  key={mine.id}
+                  className="p-2.5 rounded-xl bg-gala-obsidian/80 border border-gala-silver/15 flex items-center justify-between gap-2.5"
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <img
+                      src={mine.archivo_url}
+                      alt={mine.pie_de_foto}
+                      className="w-12 h-12 rounded-lg object-cover shrink-0 bg-gala-velvet"
+                    />
+                    <div className="min-w-0">
+                      <p className="text-xs text-gala-ivory truncate font-medium">
+                        "{mine.pie_de_foto}"
+                      </p>
+                      <span
+                        className={`inline-block mt-0.5 px-1.5 py-0.5 rounded text-[9.5px] font-mono ${
+                          mine.estado === 'APROBADO_VIDEO'
+                            ? 'bg-emerald-950/70 text-emerald-300 border border-emerald-500/30'
+                            : mine.estado === 'RECHAZADO'
+                            ? 'bg-red-950/70 text-red-300 border border-red-500/30'
+                            : 'bg-amber-950/70 text-amber-200 border border-amber-500/30'
+                        }`}
+                      >
+                        {mine.estado === 'APROBADO_VIDEO'
+                          ? 'Aprobado al Video'
+                          : mine.estado === 'RECHAZADO'
+                          ? 'Descartado'
+                          : 'Pendiente de revisión'}
+                      </span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteMemory(mine)}
+                    className="p-2 rounded-lg bg-red-950/60 hover:bg-red-900 border border-red-500/30 text-red-300 shrink-0 transition"
+                    title="Eliminar mi recuerdo"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* CUADRICULA PAGINADA DE MEMORIAS APROBADAS PARA EL VIDEO */}
       {filteredMemories.length === 0 ? (
@@ -804,13 +967,19 @@ export const MemoryGallery: React.FC<MemoryGalleryProps> = ({
                           className="w-full h-full object-cover group-hover:scale-105 transition duration-500"
                         />
                       )}
-                      <div className="absolute top-3 left-3 flex items-center gap-1.5">
-                        {item.storyboard_orden && (
-                          <span className="px-2 py-0.5 rounded bg-gala-gold text-gala-obsidian font-mono text-[10px] font-bold shadow">
-                            Escena #{String(item.storyboard_orden).padStart(2, '0')}
+                      <div className="absolute inset-x-0 bottom-0 h-14 bg-gradient-to-t from-gala-obsidian/80 to-transparent pointer-events-none" />
+                      <div className="absolute top-2.5 left-2.5 flex items-center gap-1.5">
+                        {sortMode === 'TOP_REACTIONS' && globalIdx < 3 && (
+                          <span className="px-2 py-0.5 rounded-full bg-gala-gold text-gala-obsidian font-mono text-[10px] font-bold shadow">
+                            Top #{globalIdx + 1}
                           </span>
                         )}
-                        <span className="px-2.5 py-0.5 rounded bg-gala-obsidian/90 border border-gala-silver/35 text-[10px] font-mono uppercase text-gala-silver">
+                        {item.storyboard_orden && sortMode === 'STORYBOARD' && (
+                          <span className="px-2 py-0.5 rounded-full bg-gala-gold text-gala-obsidian font-mono text-[10px] font-bold shadow">
+                            #{String(item.storyboard_orden).padStart(2, '0')}
+                          </span>
+                        )}
+                        <span className="px-2.5 py-0.5 rounded-full bg-gala-obsidian/70 backdrop-blur-md border border-gala-silver/20 text-[10px] font-mono uppercase text-gala-silver">
                           {item.etapa}
                         </span>
                       </div>
@@ -1136,89 +1305,20 @@ export const MemoryGallery: React.FC<MemoryGalleryProps> = ({
           document.body
         )}
 
-      {/* MODAL 2 (PORTAL): VISOR INDIVIDUAL UNA POR UNA */}
-      {typeof document !== 'undefined' &&
-        createPortal(
-          <AnimatePresence>
-            {selectedViewerIndex !== null &&
-              filteredMemories[selectedViewerIndex] && (
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  className="fixed inset-0 z-[120] h-[100dvh] w-screen bg-gala-obsidian/95 backdrop-blur-xl flex flex-col justify-between p-4 sm:p-8 overflow-hidden"
-                >
-                  <StageBackground />
-                  <div className="relative z-20 flex items-center justify-between gap-2">
-                    <span className="px-3 py-1 rounded-full bg-gala-surface border border-gala-silver/30 text-xs font-mono text-gala-champagne">
-                      Memoria {selectedViewerIndex + 1} de {filteredMemories.length} ·{' '}
-                      {filteredMemories[selectedViewerIndex].etapa}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedViewerIndex(null)}
-                      className="px-3.5 py-2 rounded-xl bg-gala-surface border border-gala-silver/35 text-xs font-semibold text-gala-ivory flex items-center gap-1.5"
-                    >
-                      <X className="w-4 h-4 text-gala-gold" /> Cerrar
-                    </button>
-                  </div>
-
-                  <div className="relative z-20 flex-1 min-h-0 flex items-center justify-center my-3 overflow-hidden">
-                    <img
-                      src={filteredMemories[selectedViewerIndex].archivo_url}
-                      alt={filteredMemories[selectedViewerIndex].pie_de_foto}
-                      className="max-h-full max-w-full object-contain rounded-2xl border border-gala-silver/35 shadow-2xl"
-                    />
-                  </div>
-
-                  <div className="relative z-20 max-w-2xl mx-auto w-full text-center space-y-3">
-                    <div className="p-3.5 rounded-2xl glass">
-                      <p className="font-serif italic text-lg sm:text-xl text-gala-ivory">
-                        "{filteredMemories[selectedViewerIndex].pie_de_foto}"
-                      </p>
-                      <p className="text-xs text-gala-gold mt-1">
-                        Subida por: {filteredMemories[selectedViewerIndex].autor_nombre}
-                      </p>
-                    </div>
-                    <div className="flex items-center justify-center gap-2.5">
-                      <button
-                        type="button"
-                        disabled={selectedViewerIndex === 0}
-                        onClick={() =>
-                          setSelectedViewerIndex((i) => Math.max(0, (i || 0) - 1))
-                        }
-                        className="px-3.5 py-2.5 rounded-xl btn-silver text-xs font-semibold text-gala-ivory disabled:opacity-35 flex items-center gap-1"
-                      >
-                        <SkipBack className="w-3.5 h-3.5 text-gala-gold" /> Anterior
-                      </button>
-                      <a
-                        href={filteredMemories[selectedViewerIndex].archivo_url}
-                        download
-                        className="px-4 py-2.5 rounded-xl btn-gold text-gala-obsidian font-semibold text-xs flex items-center gap-1.5"
-                      >
-                        <Download className="w-3.5 h-3.5" /> Descargar
-                      </a>
-                      <button
-                        type="button"
-                        disabled={
-                          selectedViewerIndex === filteredMemories.length - 1
-                        }
-                        onClick={() =>
-                          setSelectedViewerIndex((i) =>
-                            Math.min(filteredMemories.length - 1, (i || 0) + 1)
-                          )
-                        }
-                        className="px-3.5 py-2.5 rounded-xl btn-silver text-xs font-semibold text-gala-ivory disabled:opacity-35 flex items-center gap-1"
-                      >
-                        Siguiente <SkipForward className="w-3.5 h-3.5 text-gala-gold" />
-                      </button>
-                    </div>
-                  </div>
-                </motion.div>
-              )}
-          </AnimatePresence>,
-          document.body
-        )}
+      {/* VISOR EDITORIAL UNIFICADO CON SWIPE Y REACCIONES */}
+      <EditorialLightbox
+        items={filteredMemories}
+        activeIndex={selectedViewerIndex}
+        onClose={() => setSelectedViewerIndex(null)}
+        onChangeIndex={setSelectedViewerIndex}
+        badgeLabel={(item) => item.etapa}
+        enableReactions={true}
+        myReactions={myReactions}
+        reactionCounts={getReactionCounts}
+        onReact={handleReactMemory}
+        canDelete={(item) => Boolean(isAdmin || currentUser?.id === item.usuario_id)}
+        onDelete={handleDeleteMemory}
+      />
 
       {/* MODAL 3 (PORTAL): SOLICITAR RETIRO POR PRIVACIDAD */}
       {typeof document !== 'undefined' &&

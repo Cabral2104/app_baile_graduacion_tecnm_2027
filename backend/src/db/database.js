@@ -514,6 +514,7 @@ seedInitialData();
 
 module.exports = {
   db,
+  DB_PATH,
   STORAGE_UPLOADS_DIR,
   STORAGE_EXPORTS_DIR,
 };

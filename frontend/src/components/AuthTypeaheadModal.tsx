@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Search,
@@ -11,6 +12,7 @@ import {
   AlertCircle,
   Users,
   QrCode,
+  X,
 } from 'lucide-react';
 import { User } from '../types';
 import { api, saveSession } from '../services/api';
@@ -35,8 +37,16 @@ export const AuthTypeaheadModal: React.FC<AuthTypeaheadModalProps> = ({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Modo de ingreso: Alumno del padrón o Acompañante de Mesa (QR)
-  const [authMode, setAuthMode] = useState<'STUDENT' | 'GUEST'>('STUDENT');
+  // Modo de ingreso: si escaneó QR de mesa, abre directo en Acompañante de Mesa (sin PIN), con opción a cambiar a Alumno
+  const [authMode, setAuthMode] = useState<'STUDENT' | 'GUEST'>(() => {
+    if (typeof window !== 'undefined') {
+      const hasMesaUrl = Boolean(new URLSearchParams(window.location.search).get('mesa'));
+      if (hasMesaUrl || localStorage.getItem('gala_qr_scanned') === '1') {
+        return 'GUEST';
+      }
+    }
+    return 'STUDENT';
+  });
   const [guestName, setGuestName] = useState('');
   const [guestMesa, setGuestMesa] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -46,9 +56,16 @@ export const AuthTypeaheadModal: React.FC<AuthTypeaheadModalProps> = ({
   });
 
   useEffect(() => {
+    if (!isOpen) return;
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('gala_guest_mesa');
       if (saved) setGuestMesa(saved);
+      const isQr =
+        Boolean(new URLSearchParams(window.location.search).get('mesa')) ||
+        localStorage.getItem('gala_qr_scanned') === '1';
+      if (isQr) {
+        setAuthMode('GUEST');
+      }
     }
   }, [isOpen]);
 
@@ -136,40 +153,46 @@ export const AuthTypeaheadModal: React.FC<AuthTypeaheadModalProps> = ({
     }
   };
 
-  if (!isOpen) return null;
+  if (!isOpen || typeof document === 'undefined') return null;
 
-  return (
-    <div className="fixed inset-0 z-[120] flex items-end sm:items-center justify-center bg-gala-obsidian/85 backdrop-blur-md p-0 sm:p-4">
+  return createPortal(
+    <div
+      onClick={() => onClose && onClose()}
+      className="fixed inset-0 z-[150] h-[100dvh] w-screen flex items-center justify-center bg-gala-obsidian/85 backdrop-blur-md p-3 sm:p-4"
+    >
       <motion.div
-        initial={{ opacity: 0, y: 28 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: 20 }}
-        className="w-full max-w-lg bg-gala-velvet border-t sm:border border-gala-gold/30 rounded-t-3xl sm:rounded-2xl shadow-2xl overflow-hidden max-h-[92vh] flex flex-col"
+        initial={{ opacity: 0, y: 18, scale: 0.98 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: 14, scale: 0.98 }}
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-lg glass glass-ornate border border-gala-gold/35 rounded-2xl shadow-2xl overflow-hidden max-h-[86dvh] flex flex-col"
       >
-        {/* Cabecera Editorial */}
-        <div className="px-6 pt-6 pb-4 border-b border-gala-gold/15 bg-gradient-to-b from-gala-surface to-gala-velvet">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] uppercase tracking-[0.25em] text-gala-gold font-medium">
+        {/* Cabecera Editorial Fija (Siempre visible en iOS y Android) */}
+        <div className="shrink-0 px-4 sm:px-6 pt-4 sm:pt-5 pb-3.5 border-b border-gala-gold/15 bg-gradient-to-b from-gala-surface/85 to-transparent">
+          <div className="flex items-center justify-between gap-2">
+            <span className="font-display text-[10px] sm:text-[10.5px] uppercase tracking-[0.2em] text-gala-gold font-semibold truncate">
               Padrón Oficial de Generación
             </span>
             {onClose && (
               <button
                 type="button"
                 onClick={onClose}
-                className="text-xs text-gala-muted hover:text-gala-ivory px-2 py-1 rounded border border-gala-gold/20"
+                className="shrink-0 inline-flex items-center gap-1 text-xs font-semibold text-gala-champagne hover:text-gala-ivory bg-gala-obsidian/70 hover:bg-gala-surface px-2.5 py-1.5 rounded-xl border border-gala-gold/35 transition"
+                aria-label="Cerrar ventana de acceso"
               >
-                Cerrar
+                <X className="w-3.5 h-3.5 text-gala-gold" />
+                <span>Cerrar</span>
               </button>
             )}
           </div>
-          <h2 className="font-serif text-2xl sm:text-3xl text-gala-ivory mt-1 font-normal">
+          <h2 className="font-serif text-2xl sm:text-3xl text-gala-ivory mt-1 font-semibold">
             {selectedUser
               ? 'Confirmación de Identidad'
               : authMode === 'GUEST'
               ? 'Acceso Rápido de Mesa'
               : 'Identifícate en la Lista'}
           </h2>
-          <p className="text-xs sm:text-sm text-gala-parchment/80 mt-1">
+          <p className="text-xs sm:text-sm text-gala-parchment/80 mt-0.5">
             {selectedUser
               ? selectedUser.tiene_pin
                 ? 'Ingresa tu PIN personal de 4 dígitos para continuar.'
@@ -180,8 +203,8 @@ export const AuthTypeaheadModal: React.FC<AuthTypeaheadModalProps> = ({
           </p>
         </div>
 
-        {/* Contenido dinámico */}
-        <div className="p-6 overflow-y-auto space-y-5">
+        {/* Contenido dinámico con scroll interno seguro */}
+        <div className="flex-1 min-h-0 p-4 sm:p-6 overflow-y-auto overscroll-contain space-y-4">
           <AnimatePresence mode="wait">
             {!selectedUser ? (
               <motion.div
@@ -223,6 +246,13 @@ export const AuthTypeaheadModal: React.FC<AuthTypeaheadModalProps> = ({
                     <span>Acompañante de Mesa</span>
                   </button>
                 </div>
+
+                {error && (
+                  <div className="p-3 rounded-xl bg-red-950/60 border border-red-500/40 flex items-start gap-2.5 text-xs text-red-200">
+                    <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+                    <span>{error}</span>
+                  </div>
+                )}
 
                 {authMode === 'GUEST' ? (
                   /* Formulario de Acompañante de Mesa */
@@ -283,8 +313,7 @@ export const AuthTypeaheadModal: React.FC<AuthTypeaheadModalProps> = ({
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
                         placeholder="Escribe tu nombre o apellido (ej. maria, alejandro, sofia)..."
-                        autoFocus
-                        className="w-full pl-11 pr-4 py-3.5 bg-gala-obsidian border border-gala-gold/30 rounded-xl text-sm text-gala-ivory placeholder:text-gala-muted focus:outline-none focus:border-gala-gold transition"
+                        className="w-full pl-11 pr-4 py-3 bg-gala-obsidian border border-gala-gold/30 rounded-xl text-sm text-gala-ivory placeholder:text-gala-muted focus:outline-none focus:border-gala-gold transition"
                       />
                     </div>
 
@@ -494,7 +523,8 @@ export const AuthTypeaheadModal: React.FC<AuthTypeaheadModalProps> = ({
           </AnimatePresence>
         </div>
       </motion.div>
-    </div>
+    </div>,
+    document.body
   );
 };
 

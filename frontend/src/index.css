@@ -66,12 +66,14 @@
     overflow-x: hidden;
   }
 
-  h1.font-serif,
-  h2.font-serif {
-    font-family: 'Cinzel', Georgia, serif;
-    font-weight: 600;
-    letter-spacing: 0.02em;
+  h1,
+  h2,
+  h3 {
     text-wrap: balance;
+  }
+
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
   }
 
   button,
@@ -241,52 +243,54 @@
     background: linear-gradient(135deg, rgba(226, 232, 240, 0.26), rgba(229, 184, 91, 0.15));
   }
 
-  /* Tarjeta cristal Noche Estrellada con esquinas en plata y oro */
+  /* Tarjeta cristal Noche Estrellada limpia y elegante (sin ruido visual excesivo) */
   .glass {
-    --c-gold: rgba(229, 184, 91, 0.85);
-    --c-silver: rgba(226, 232, 240, 0.75);
     position: relative;
     background: linear-gradient(
-      160deg,
-      rgba(20, 42, 98, 0.68) 0%,
-      rgba(9, 19, 48, 0.84) 60%,
-      rgba(5, 11, 28, 0.9) 100%
+      165deg,
+      rgba(20, 42, 98, 0.54) 0%,
+      rgba(9, 19, 48, 0.78) 60%,
+      rgba(4, 8, 24, 0.88) 100%
     );
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    border: 1px solid rgba(226, 232, 240, 0.22);
-    box-shadow: 0 24px 60px -28px rgba(0, 0, 0, 0.92),
-      0 0 35px -18px rgba(56, 103, 224, 0.4),
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+    border: 1px solid rgba(226, 232, 240, 0.14);
+    box-shadow: 0 20px 50px -26px rgba(0, 0, 0, 0.88),
       inset 0 1px 0 rgba(248, 250, 252, 0.12);
   }
-  .glass::before {
+
+  /* Marco de gala ornamentado con escuadras de oro y plata (exclusivo para piezas centrales) */
+  .glass-ornate {
+    --c-gold: rgba(229, 184, 91, 0.85);
+    --c-silver: rgba(226, 232, 240, 0.7);
+  }
+  .glass-ornate::before {
     content: '';
     position: absolute;
-    inset: 6px;
+    inset: 8px;
     pointer-events: none;
     border-radius: inherit;
     z-index: 5;
     background:
-      linear-gradient(var(--c-gold), var(--c-gold)) top left / 16px 1px no-repeat,
-      linear-gradient(var(--c-gold), var(--c-gold)) top left / 1px 16px no-repeat,
-      linear-gradient(var(--c-silver), var(--c-silver)) top right / 16px 1px no-repeat,
-      linear-gradient(var(--c-silver), var(--c-silver)) top right / 1px 16px no-repeat,
-      linear-gradient(var(--c-silver), var(--c-silver)) bottom left / 16px 1px no-repeat,
-      linear-gradient(var(--c-silver), var(--c-silver)) bottom left / 1px 16px no-repeat,
-      linear-gradient(var(--c-gold), var(--c-gold)) bottom right / 16px 1px no-repeat,
-      linear-gradient(var(--c-gold), var(--c-gold)) bottom right / 1px 16px no-repeat;
+      linear-gradient(var(--c-gold), var(--c-gold)) top left / 18px 1px no-repeat,
+      linear-gradient(var(--c-gold), var(--c-gold)) top left / 1px 18px no-repeat,
+      linear-gradient(var(--c-silver), var(--c-silver)) top right / 18px 1px no-repeat,
+      linear-gradient(var(--c-silver), var(--c-silver)) top right / 1px 18px no-repeat,
+      linear-gradient(var(--c-silver), var(--c-silver)) bottom left / 18px 1px no-repeat,
+      linear-gradient(var(--c-silver), var(--c-silver)) bottom left / 1px 18px no-repeat,
+      linear-gradient(var(--c-gold), var(--c-gold)) bottom right / 18px 1px no-repeat,
+      linear-gradient(var(--c-gold), var(--c-gold)) bottom right / 1px 18px no-repeat;
   }
 
   .lift {
-    transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1),
-      box-shadow 0.35s ease, border-color 0.35s ease;
+    transition: transform 0.32s cubic-bezier(0.22, 1, 0.36, 1),
+      box-shadow 0.32s ease, border-color 0.32s ease;
   }
   .lift:hover {
-    transform: translateY(-5px);
-    border-color: rgba(229, 184, 91, 0.65);
-    box-shadow: 0 30px 60px -24px rgba(0, 0, 0, 0.95),
-      0 0 40px -10px rgba(229, 184, 91, 0.32),
-      0 0 25px -8px rgba(226, 232, 240, 0.25);
+    transform: translateY(-4px);
+    border-color: rgba(229, 184, 91, 0.5);
+    box-shadow: 0 24px 55px -24px rgba(0, 0, 0, 0.92),
+      0 0 32px -12px rgba(229, 184, 91, 0.28);
   }
 
   .ornament {

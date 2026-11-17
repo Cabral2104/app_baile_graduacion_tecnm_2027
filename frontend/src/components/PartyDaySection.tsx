@@ -21,6 +21,8 @@ import {
   RotateCcw,
   Users,
   Heart,
+  Award,
+  Maximize2,
 } from 'lucide-react';
 import { MediaItem, SystemConfig, User } from '../types';
 import { api } from '../services/api';
@@ -30,6 +32,8 @@ import {
   formatBytes,
 } from '../utils/imageCompression';
 import { PaginationBar } from './PaginationBar';
+import { EditorialLightbox } from './EditorialLightbox';
+import { useGalaConfirm } from './GalaConfirmModal';
 
 interface PartyDaySectionProps {
   items: MediaItem[];
@@ -38,6 +42,7 @@ interface PartyDaySectionProps {
   onRequireAuth: () => void;
   onOpenFullCarousel: () => void;
   onRefresh: () => void;
+  openUploadTrigger?: number;
 }
 
 export const PartyDaySection: React.FC<PartyDaySectionProps> = ({
@@ -47,23 +52,32 @@ export const PartyDaySection: React.FC<PartyDaySectionProps> = ({
   onRequireAuth,
   onOpenFullCarousel,
   onRefresh,
+  openUploadTrigger = 0,
 }) => {
+  const confirm = useGalaConfirm();
   // En Día de la Fiesta se muestran las fotos de la fiesta en orden cronológico: de la más antigua (primera) a la más reciente
-  const partyPhotos = items
-    .filter((i) => i.estado === 'APROBADO_GALERIA')
-    .sort(
-      (a, b) =>
-        new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-    );
+  const partyPhotos = useMemo(
+    () =>
+      items
+        .filter((i) => i.estado === 'APROBADO_GALERIA')
+        .sort(
+          (a, b) =>
+            new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+        ),
+    [items]
+  );
 
-  // Estados para búsqueda por alumno y filtro por mesa
+  // Estados para búsqueda por alumno, filtro por mesa y orden (Cronológico vs Top Momentos)
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedMesa, setSelectedMesa] = useState<'TODAS' | string>('TODAS');
+  const [sortMode, setSortMode] = useState<'CHRONO' | 'TOP_REACTIONS'>('CHRONO');
 
   // Modo de vista dentro de "Día de la Fiesta": 'ONE_BY_ONE' (Una por una) o 'GRID' (Todas paginadas)
   const [viewMode, setViewMode] = useState<'ONE_BY_ONE' | 'GRID'>('ONE_BY_ONE');
   const [currentPhotoIdx, setCurrentPhotoIdx] = useState(0);
   const [autoPlayInline, setAutoPlayInline] = useState(false);
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const [showMyUploads, setShowMyUploads] = useState(false);
 
   // Paginación para la vista en cuadrícula
   const [currentPage, setCurrentPage] = useState(1);
@@ -92,17 +106,24 @@ export const PartyDaySection: React.FC<PartyDaySectionProps> = ({
     Array<{ id: string; mediaId: string; tipo: 'CORAZON' | 'ESTRELLA' }>
   >([]);
 
-  // Sincronizar mis reacciones cuando cargan las fotos públicas desde el backend
+  // Reiniciar reacciones cacheadas si cambia de usuario autenticado
   useEffect(() => {
-    const map: Record<string, 'CORAZON' | 'ESTRELLA' | null> = {};
-    partyPhotos.forEach((p) => {
-      if (p.mi_reaccion) {
-        map[p.id] = p.mi_reaccion;
+    setMyReactions({});
+  }, [currentUser?.id]);
+
+  // Sincronizar mis reacciones cuando cargan las fotos públicas desde el backend sin bucles de render
+  useEffect(() => {
+    setMyReactions((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const p of partyPhotos) {
+        if (p.mi_reaccion !== undefined && next[p.id] === undefined) {
+          next[p.id] = p.mi_reaccion;
+          changed = true;
+        }
       }
+      return changed ? next : prev;
     });
-    if (Object.keys(map).length > 0) {
-      setMyReactions((prev) => ({ ...map, ...prev }));
-    }
   }, [partyPhotos]);
 
   const handleReact = async (mediaId: string, tipo: 'CORAZON' | 'ESTRELLA') => {
@@ -228,10 +249,10 @@ export const PartyDaySection: React.FC<PartyDaySectionProps> = ({
     );
   }, [partyPhotos]);
 
-  // Filtrado reactivo por término (alumno, mesa, distintivo, pie de foto) y por mesa seleccionada
+  // Filtrado reactivo por término, mesa y orden (Cronológico o Top Momentos por Reacciones)
   const filteredPartyPhotos = useMemo(() => {
     const term = normalizeSearch(searchQuery);
-    return partyPhotos.filter((item) => {
+    const list = partyPhotos.filter((item) => {
       // Filtro por mesa seleccionada
       if (selectedMesa !== 'TODAS') {
         const itemMesa = (item.autor_mesa || '').trim().toLowerCase();
@@ -254,7 +275,22 @@ export const PartyDaySection: React.FC<PartyDaySectionProps> = ({
 
       return true;
     });
-  }, [partyPhotos, searchQuery, selectedMesa]);
+
+    if (sortMode === 'TOP_REACTIONS') {
+      return [...list].sort((a, b) => {
+        const aTotal =
+          (localReactions[a.id]?.corazon ?? a.reacciones_corazon ?? 0) +
+          (localReactions[a.id]?.estrella ?? a.reacciones_estrella ?? 0);
+        const bTotal =
+          (localReactions[b.id]?.corazon ?? b.reacciones_corazon ?? 0) +
+          (localReactions[b.id]?.estrella ?? b.reacciones_estrella ?? 0);
+        if (bTotal !== aTotal) return bTotal - aTotal;
+        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      });
+    }
+
+    return list;
+  }, [partyPhotos, searchQuery, selectedMesa, sortMode, localReactions]);
 
   // Handlers para búsqueda y cambio de mesa
   const handleSearchChange = (val: string) => {
@@ -392,6 +428,14 @@ export const PartyDaySection: React.FC<PartyDaySectionProps> = ({
   };
 
   const handleQuickDiscard = async (mediaId: string) => {
+    const ok = await confirm({
+      title: '¿Retirar fotografía de pantalla?',
+      description:
+        'Esta foto dejará de mostrarse de inmediato en Día de la Fiesta y en la pantalla gigante del salón.',
+      confirmText: 'Sí, retirar',
+      variant: 'danger',
+    });
+    if (!ok) return;
     try {
       await api.moderateMedia(mediaId, 'RECHAZADO', false);
       setBannerMsg('La fotografía fue retirada de la pantalla gigante.');
@@ -399,6 +443,26 @@ export const PartyDaySection: React.FC<PartyDaySectionProps> = ({
       setTimeout(() => setBannerMsg(null), 4000);
     } catch {
       setBannerMsg('No se pudo retirar la fotografía.');
+    }
+  };
+
+  const handleDeleteOwnOrAdmin = async (item: MediaItem) => {
+    const ok = await confirm({
+      title: '¿Eliminar fotografía?',
+      description: `Se eliminará "${item.pie_de_foto}". Ya no aparecerá en la galería ni en el proyector.`,
+      confirmText: 'Sí, eliminar',
+      variant: 'danger',
+    });
+    if (!ok) return;
+    try {
+      await api.deleteMyMedia(item.id);
+      setLightboxIndex(null);
+      setBannerMsg('Tu archivo fue eliminado correctamente.');
+      loadMyLiveUploads();
+      onRefresh();
+      setTimeout(() => setBannerMsg(null), 4000);
+    } catch (err: any) {
+      setBannerMsg(err.message || 'No se pudo eliminar la fotografía.');
     }
   };
 
@@ -421,6 +485,12 @@ export const PartyDaySection: React.FC<PartyDaySectionProps> = ({
     }
   }, [canUploadParty, showUploadBox]);
 
+  useEffect(() => {
+    if (openUploadTrigger > 0 && canUploadParty) {
+      setShowUploadBox(true);
+    }
+  }, [openUploadTrigger, canUploadParty]);
+
   return (
     <div className="space-y-6">
       {bannerMsg && (
@@ -431,30 +501,30 @@ export const PartyDaySection: React.FC<PartyDaySectionProps> = ({
       )}
 
       {/* CABECERA PRINCIPAL DE "DIA DE LA FIESTA" */}
-      <div className="p-6 sm:p-8 rounded-2xl glass shadow-xl space-y-5">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5">
-          <div className="space-y-1.5">
-            <span className="text-[11px] uppercase tracking-[0.25em] text-gala-gold font-semibold inline-flex items-center gap-1.5">
+      <div className="p-5 sm:p-6 rounded-2xl glass shadow-xl space-y-4">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div className="space-y-1">
+            <span className="font-display text-[10.5px] uppercase tracking-[0.22em] text-gala-gold font-semibold inline-flex items-center gap-1.5">
               <Sparkles className="w-3.5 h-3.5 text-gala-silver" />
-              Apartado 2 · El inicio de nuestra historia · En Vivo
+              El inicio de nuestra historia · En Vivo
             </span>
-            <h2 className="font-serif text-3xl sm:text-4xl text-gala-ivory">
-              Día de la Fiesta · Fotos en Momento Real
+            <h2 className="font-serif font-semibold text-2xl sm:text-4xl text-gala-ivory">
+              Día de la Fiesta · Momentos en Tiempo Real
             </h2>
-            <p className="text-xs sm:text-sm text-gala-parchment/90 max-w-2xl leading-relaxed">
-              Mira una por una las fotos que los invitados están subiendo esta noche desde sus mesas, reproduce el carrusel en pantalla gigante para el salón o sube tu propia foto al instante.
+            <p className="text-xs sm:text-sm text-gala-parchment/85 max-w-2xl leading-relaxed">
+              Explora las fotografías que los invitados suben desde cada mesa, proyecta el muro en vivo o comparte tu propia foto ahora.
             </p>
           </div>
 
           {/* Botones Principales: Reproducir Carrusel Proyector y Subir Foto de la Fiesta */}
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 shrink-0">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 shrink-0">
             <button
               type="button"
               onClick={onOpenFullCarousel}
-              className="px-5 py-3.5 rounded-xl btn-gold text-gala-obsidian font-semibold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg transition"
+              className="px-4 py-3 rounded-xl btn-gold text-gala-obsidian font-semibold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg transition"
             >
               <Tv className="w-4 h-4" />
-              <span>Reproducir Carrusel (Pantalla Salón)</span>
+              <span>Pantalla del Salón</span>
             </button>
 
             {canUploadParty ? (
@@ -718,57 +788,167 @@ export const PartyDaySection: React.FC<PartyDaySectionProps> = ({
         )}
       </div>
 
-      {/* BARRA DE MODO DE VISTA: VER UNA POR UNA O VER CUADRICULA PAGINADA */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="inline-flex rounded-xl bg-gala-velvet p-1 border border-gala-silver/25">
+      {/* BARRA DE MODO DE VISTA + ORDEN "TOP MOMENTOS" + MIS SUBIDAS */}
+      <div className="flex flex-wrap items-center justify-between gap-2.5">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="inline-flex rounded-xl bg-gala-velvet p-1 border border-gala-silver/20">
+            <button
+              type="button"
+              onClick={() => setViewMode('ONE_BY_ONE')}
+              className={`px-3.5 py-2 rounded-lg text-xs font-medium flex items-center gap-1.5 transition ${
+                viewMode === 'ONE_BY_ONE'
+                  ? 'btn-gold text-gala-obsidian font-semibold'
+                  : 'text-gala-silver hover:text-gala-ivory'
+              }`}
+            >
+              <Eye className="w-3.5 h-3.5" />
+              <span>Una por Una</span>
+              <span className="font-mono tabular-nums text-[10px] opacity-80">
+                ({filteredPartyPhotos.length})
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('GRID')}
+              className={`px-3.5 py-2 rounded-lg text-xs font-medium flex items-center gap-1.5 transition ${
+                viewMode === 'GRID'
+                  ? 'btn-gold text-gala-obsidian font-semibold'
+                  : 'text-gala-silver hover:text-gala-ivory'
+              }`}
+            >
+              <LayoutGrid className="w-3.5 h-3.5" /> Galería
+            </button>
+          </div>
+
           <button
             type="button"
-            onClick={() => setViewMode('ONE_BY_ONE')}
-            className={`px-4 py-2 rounded-lg text-xs font-medium flex items-center gap-2 transition ${
-              viewMode === 'ONE_BY_ONE'
-                ? 'btn-gold text-gala-obsidian font-semibold'
-                : 'text-gala-silver hover:text-gala-ivory'
+            onClick={() => {
+              setSortMode((prev) => (prev === 'CHRONO' ? 'TOP_REACTIONS' : 'CHRONO'));
+              setCurrentPage(1);
+              setCurrentPhotoIdx(0);
+            }}
+            className={`px-3.5 py-2 rounded-xl text-xs font-semibold border flex items-center gap-1.5 transition ${
+              sortMode === 'TOP_REACTIONS'
+                ? 'bg-amber-900/55 border-gala-gold text-gala-champagne shadow-[0_0_14px_rgba(229,184,91,0.28)]'
+                : 'bg-gala-obsidian/70 border-gala-silver/20 text-gala-silver hover:border-gala-gold/50'
             }`}
+            title="Ordenar de mayor a menor cantidad de reacciones"
           >
-            <Eye className="w-3.5 h-3.5" /> Ver Fotos Una por Una ({filteredPartyPhotos.length})
-          </button>
-          <button
-            type="button"
-            onClick={() => setViewMode('GRID')}
-            className={`px-4 py-2 rounded-lg text-xs font-medium flex items-center gap-2 transition ${
-              viewMode === 'GRID'
-                ? 'btn-gold text-gala-obsidian font-semibold'
-                : 'text-gala-silver hover:text-gala-ivory'
-            }`}
-          >
-            <LayoutGrid className="w-3.5 h-3.5" /> Ver Todas las Fotos
+            <Award className="w-3.5 h-3.5 text-gala-gold" />
+            <span>{sortMode === 'TOP_REACTIONS' ? 'Top Momentos Activo' : 'Top Momentos'}</span>
           </button>
         </div>
 
-        {viewMode === 'ONE_BY_ONE' && filteredPartyPhotos.length > 1 && (
-          <button
-            type="button"
-            onClick={() => setAutoPlayInline((prev) => !prev)}
-            className={`px-4 py-2 rounded-xl text-xs font-medium border flex items-center gap-2 transition ${
-              autoPlayInline
-                ? 'bg-gala-gold/20 border-gala-gold text-gala-champagne'
-                : 'btn-silver text-gala-silver'
-            }`}
-          >
-            {autoPlayInline ? (
-              <>
-                <Pause className="w-3.5 h-3.5 text-gala-gold" />
-                <span>Pausar Avance Automático</span>
-              </>
-            ) : (
-              <>
-                <Play className="w-3.5 h-3.5 text-gala-gold" />
-                <span>Pasar Fotos Automáticamente</span>
-              </>
-            )}
-          </button>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          {currentUser && myLiveUploads.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowMyUploads((prev) => !prev)}
+              className={`px-3.5 py-2 rounded-xl text-xs font-medium border flex items-center gap-1.5 transition ${
+                showMyUploads
+                  ? 'bg-gala-gold/20 border-gala-gold text-gala-champagne'
+                  : 'bg-gala-obsidian/70 border-gala-silver/20 text-gala-silver hover:text-gala-ivory'
+              }`}
+            >
+              <Camera className="w-3.5 h-3.5 text-gala-gold" />
+              <span>Mis Subidas ({myLiveUploads.length})</span>
+            </button>
+          )}
+
+          {viewMode === 'ONE_BY_ONE' && filteredPartyPhotos.length > 1 && (
+            <button
+              type="button"
+              onClick={() => setAutoPlayInline((prev) => !prev)}
+              className={`px-3.5 py-2 rounded-xl text-xs font-medium border flex items-center gap-1.5 transition ${
+                autoPlayInline
+                  ? 'bg-gala-gold/20 border-gala-gold text-gala-champagne'
+                  : 'btn-silver text-gala-silver'
+              }`}
+            >
+              {autoPlayInline ? (
+                <>
+                  <Pause className="w-3.5 h-3.5 text-gala-gold" />
+                  <span>Pausar Auto</span>
+                </>
+              ) : (
+                <>
+                  <Play className="w-3.5 h-3.5 text-gala-gold" />
+                  <span>Auto-Avance</span>
+                </>
+              )}
+            </button>
+          )}
+        </div>
       </div>
+
+      {/* PANEL DESPLEGABLE: MIS SUBIDAS DE LA FIESTA (ELIMINAR ERRORES AL INSTANTE) */}
+      <AnimatePresence>
+        {showMyUploads && currentUser && myLiveUploads.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="glass rounded-2xl p-4 sm:p-5 space-y-3 overflow-hidden border border-gala-gold/30"
+          >
+            <div className="flex items-center justify-between">
+              <h3 className="font-serif text-lg text-gala-ivory">
+                Mis Fotos Subidas en la Fiesta ({myLiveUploads.length})
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowMyUploads(false)}
+                className="text-xs text-gala-muted hover:text-gala-ivory"
+              >
+                Ocultar
+              </button>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {myLiveUploads.map((mine) => (
+                <div
+                  key={mine.id}
+                  className="p-2.5 rounded-xl bg-gala-obsidian/80 border border-gala-silver/15 flex items-center justify-between gap-2.5"
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <img
+                      src={mine.archivo_url}
+                      alt={mine.pie_de_foto}
+                      className="w-12 h-12 rounded-lg object-cover shrink-0 bg-gala-velvet"
+                    />
+                    <div className="min-w-0">
+                      <p className="text-xs text-gala-ivory truncate font-medium">
+                        "{mine.pie_de_foto}"
+                      </p>
+                      <span
+                        className={`inline-block mt-0.5 px-1.5 py-0.5 rounded text-[9.5px] font-mono ${
+                          mine.estado === 'APROBADO_GALERIA'
+                            ? 'bg-emerald-950/70 text-emerald-300 border border-emerald-500/30'
+                            : mine.estado === 'RECHAZADO'
+                            ? 'bg-red-950/70 text-red-300 border border-red-500/30'
+                            : 'bg-amber-950/70 text-amber-200 border border-amber-500/30'
+                        }`}
+                      >
+                        {mine.estado === 'APROBADO_GALERIA'
+                          ? 'Publicada en Vivo'
+                          : mine.estado === 'RECHAZADO'
+                          ? 'Retirada'
+                          : 'En revisión'}
+                      </span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteOwnOrAdmin(mine)}
+                    className="p-2 rounded-lg bg-red-950/60 hover:bg-red-900 border border-red-500/30 text-red-300 shrink-0 transition"
+                    title="Eliminar esta foto"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* CONTENIDO PRINCIPAL: VISOR UNA POR UNA O CUADRICULA PAGINADA */}
       {partyPhotos.length === 0 ? (
@@ -807,16 +987,29 @@ export const PartyDaySection: React.FC<PartyDaySectionProps> = ({
         /* VISTA 1: VER LAS FOTOS DE LA FIESTA UNA POR UNA CON CONTROLES GRANDES */
         <div className="glass rounded-2xl p-4 sm:p-6 space-y-5 shadow-2xl">
           <div className="flex items-center justify-between text-xs text-gala-silver">
-            <span className="font-mono px-3 py-1 rounded-full bg-gala-obsidian border border-gala-silver/30 text-gala-champagne">
+            <span className="font-mono tabular-nums px-3 py-1 rounded-full bg-gala-obsidian border border-gala-silver/25 text-gala-champagne">
               Foto {currentPhotoIdx + 1} de {filteredPartyPhotos.length}
             </span>
-            <span className="text-gala-gold font-medium">
-              {currentPhoto.autor_mesa || 'En Vivo desde el Salón'}
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-gala-gold font-medium">
+                {currentPhoto.autor_mesa || 'En Vivo desde el Salón'}
+              </span>
+              <button
+                type="button"
+                onClick={() => setLightboxIndex(currentPhotoIdx)}
+                className="p-1.5 rounded-lg bg-gala-obsidian/80 hover:bg-gala-surface border border-gala-silver/25 text-gala-champagne transition"
+                title="Ampliar en pantalla completa (Swipe)"
+              >
+                <Maximize2 className="w-3.5 h-3.5 text-gala-gold" />
+              </button>
+            </div>
           </div>
 
-          {/* Imagen o Video Central */}
-          <div className="relative aspect-video bg-gala-obsidian rounded-xl overflow-hidden border border-gala-silver/25 flex items-center justify-center">
+          {/* Imagen o Video Central (clic abre visor pantalla completa) */}
+          <div
+            onClick={() => currentPhoto.tipo_medio !== 'VIDEO' && setLightboxIndex(currentPhotoIdx)}
+            className="relative aspect-video bg-gala-obsidian rounded-xl overflow-hidden border border-gala-silver/20 flex items-center justify-center cursor-pointer"
+          >
             <AnimatePresence mode="wait">
               <motion.div
                 key={currentPhoto.id}
@@ -1054,30 +1247,36 @@ export const PartyDaySection: React.FC<PartyDaySectionProps> = ({
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
             {paginatedPartyPhotos.map((item, idx) => {
               const globalIdx = (safePage - 1) * pageSize + idx;
+              const isOwn = currentUser?.id === item.usuario_id;
               return (
-                <div
+                <article
                   key={item.id}
-                  className="glass lift rounded-2xl overflow-hidden flex flex-col justify-between"
+                  className="glass lift rounded-2xl overflow-hidden flex flex-col justify-between group"
                 >
                   <div>
                     <div
-                      onClick={() => {
-                        setCurrentPhotoIdx(globalIdx);
-                        setViewMode('ONE_BY_ONE');
-                      }}
+                      onClick={() => setLightboxIndex(globalIdx)}
                       className="relative aspect-[4/3] bg-gala-obsidian cursor-pointer overflow-hidden"
                     >
                       <img
                         src={item.archivo_url}
                         alt={item.pie_de_foto}
-                        className="w-full h-full object-cover hover:scale-105 transition duration-500"
+                        className="w-full h-full object-cover group-hover:scale-105 transition duration-500"
                       />
-                      <span className="absolute top-3 left-3 px-2.5 py-0.5 rounded bg-gala-obsidian/90 border border-gala-silver/35 text-[10px] font-mono text-gala-champagne">
-                        {item.autor_mesa || 'En Vivo'}
-                      </span>
+                      <div className="absolute inset-x-0 bottom-0 h-14 bg-gradient-to-t from-gala-obsidian/80 to-transparent pointer-events-none" />
+                      <div className="absolute top-2.5 left-2.5 flex items-center gap-1.5">
+                        {sortMode === 'TOP_REACTIONS' && globalIdx < 3 && (
+                          <span className="px-2 py-0.5 rounded-full bg-gala-gold text-gala-obsidian font-mono text-[10px] font-bold shadow">
+                            Top #{globalIdx + 1}
+                          </span>
+                        )}
+                        <span className="px-2.5 py-0.5 rounded-full bg-gala-obsidian/70 backdrop-blur-md border border-gala-silver/20 text-[10px] font-mono text-gala-champagne">
+                          {item.autor_mesa || 'En Vivo'}
+                        </span>
+                      </div>
                     </div>
                     <div className="p-4 space-y-2">
-                      <p className="font-serif italic text-lg text-gala-ivory">
+                      <p className="font-serif italic text-lg text-gala-ivory leading-snug">
                         "{item.pie_de_foto}"
                       </p>
                       <div className="flex items-center justify-between gap-2 pt-0.5">
@@ -1092,7 +1291,7 @@ export const PartyDaySection: React.FC<PartyDaySectionProps> = ({
                           const counts = getReactionCounts(item);
 
                           return (
-                            <div className="flex items-center gap-1.5 shrink-0">
+                            <div className="flex items-center gap-1.5 shrink-0 tabular-nums">
                               <button
                                 type="button"
                                 onClick={(e) => {
@@ -1151,16 +1350,13 @@ export const PartyDaySection: React.FC<PartyDaySectionProps> = ({
                       </div>
                     </div>
                   </div>
-                  <div className="px-4 py-3 bg-gala-obsidian/85 border-t border-gala-silver/15 flex items-center justify-between gap-2">
+                  <div className="px-4 py-2.5 bg-gala-obsidian/70 border-t border-gala-silver/10 flex items-center justify-between gap-2">
                     <button
                       type="button"
-                      onClick={() => {
-                        setCurrentPhotoIdx(globalIdx);
-                        setViewMode('ONE_BY_ONE');
-                      }}
-                      className="text-xs text-gala-champagne hover:underline flex items-center gap-1"
+                      onClick={() => setLightboxIndex(globalIdx)}
+                      className="text-xs text-gala-champagne hover:text-gala-gold flex items-center gap-1.5 transition"
                     >
-                      <Eye className="w-3.5 h-3.5 text-gala-gold" /> Ver en grande
+                      <Eye className="w-3.5 h-3.5 text-gala-gold" /> Ampliar
                     </button>
                     <div className="flex items-center gap-1.5">
                       <a
@@ -1170,6 +1366,16 @@ export const PartyDaySection: React.FC<PartyDaySectionProps> = ({
                       >
                         <Download className="w-3.5 h-3.5" /> Descargar
                       </a>
+                      {isOwn && !isAdmin && (
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteOwnOrAdmin(item)}
+                          className="p-1.5 rounded-lg bg-red-950/70 hover:bg-red-900 border border-red-500/40 text-red-300"
+                          title="Eliminar mi foto"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                       {isAdmin && (
                         <button
                           type="button"
@@ -1182,7 +1388,7 @@ export const PartyDaySection: React.FC<PartyDaySectionProps> = ({
                       )}
                     </div>
                   </div>
-                </div>
+                </article>
               );
             })}
           </div>
@@ -1209,6 +1415,21 @@ export const PartyDaySection: React.FC<PartyDaySectionProps> = ({
           </span>
         </div>
       )}
+
+      {/* Visor Editorial con Swipe táctil, reacciones y eliminación rápida */}
+      <EditorialLightbox
+        items={filteredPartyPhotos}
+        activeIndex={lightboxIndex}
+        onClose={() => setLightboxIndex(null)}
+        onChangeIndex={setLightboxIndex}
+        badgeLabel={(item) => item.autor_mesa || 'Día de la Fiesta'}
+        enableReactions={true}
+        myReactions={myReactions}
+        reactionCounts={getReactionCounts}
+        onReact={handleReact}
+        canDelete={(item) => Boolean(isAdmin || currentUser?.id === item.usuario_id)}
+        onDelete={handleDeleteOwnOrAdmin}
+      />
     </div>
   );
 };

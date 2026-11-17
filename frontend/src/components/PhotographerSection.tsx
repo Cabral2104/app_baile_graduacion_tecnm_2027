@@ -1,21 +1,19 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { createPortal } from 'react-dom';
-import { AnimatePresence, motion } from 'framer-motion';
+import React, { useState, useRef } from 'react';
 import {
   Camera,
   Download,
   Upload,
   CheckCircle2,
   Eye,
-  SkipBack,
-  SkipForward,
   Sparkles,
-  X,
+  FolderArchive,
+  AlertCircle,
 } from 'lucide-react';
 import { MediaItem, User } from '../types';
 import { api } from '../services/api';
 import { PaginationBar } from './PaginationBar';
-import { StageBackground } from './StageBackground';
+import { EditorialLightbox } from './EditorialLightbox';
+import { useGalaConfirm } from './GalaConfirmModal';
 
 interface PhotographerSectionProps {
   items: MediaItem[];
@@ -28,6 +26,7 @@ export const PhotographerSection: React.FC<PhotographerSectionProps> = ({
   currentUser,
   onRefresh,
 }) => {
+  const confirm = useGalaConfirm();
   const studioPhotos = items.filter(
     (i) =>
       i.estado === 'APROBADO_FOTOGRAFO' ||
@@ -45,7 +44,9 @@ export const PhotographerSection: React.FC<PhotographerSectionProps> = ({
   const [caption, setCaption] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [downloadingZip, setDownloadingZip] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  const [errMsg, setErrMsg] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   const totalPages = Math.max(1, Math.ceil(studioPhotos.length / pageSize));
@@ -55,21 +56,11 @@ export const PhotographerSection: React.FC<PhotographerSectionProps> = ({
     safePage * pageSize
   );
 
-  useEffect(() => {
-    if (viewerIndex !== null) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = '';
-    }
-    return () => {
-      document.body.style.overflow = '';
-    };
-  }, [viewerIndex]);
-
   const handleUploadOfficial = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!file || !caption.trim()) return;
     setUploading(true);
+    setErrMsg(null);
     try {
       const formData = new FormData();
       formData.append('archivo', file);
@@ -83,44 +74,100 @@ export const PhotographerSection: React.FC<PhotographerSectionProps> = ({
       setMsg('Fotografía oficial publicada directamente en el álbum.');
       onRefresh();
       setTimeout(() => setMsg(null), 4000);
+    } catch (err: any) {
+      setErrMsg(err.message || 'No se pudo publicar la fotografía oficial.');
     } finally {
       setUploading(false);
     }
   };
 
+  const handleDownloadFullAlbum = async () => {
+    setDownloadingZip(true);
+    setErrMsg(null);
+    try {
+      await api.downloadPhotographerAlbumZip();
+      setMsg('Álbum completo descargado en archivo ZIP.');
+      setTimeout(() => setMsg(null), 4000);
+    } catch (err: any) {
+      setErrMsg(err.message || 'No fue posible descargar el álbum en ZIP.');
+    } finally {
+      setDownloadingZip(false);
+    }
+  };
+
+  const handleDeleteOfficial = async (item: MediaItem) => {
+    const ok = await confirm({
+      title: '¿Eliminar fotografía oficial?',
+      description: `Se eliminará "${item.pie_de_foto}" del álbum del fotógrafo oficial.`,
+      confirmText: 'Sí, eliminar',
+      variant: 'danger',
+    });
+    if (!ok) return;
+    try {
+      await api.deleteMyMedia(item.id);
+      setViewerIndex(null);
+      setMsg('Fotografía oficial eliminada.');
+      onRefresh();
+      setTimeout(() => setMsg(null), 3500);
+    } catch (err: any) {
+      setErrMsg(err.message || 'No se pudo eliminar la fotografía.');
+    }
+  };
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {msg && (
-        <div className="p-4 rounded-xl bg-emerald-950/80 border border-emerald-500/40 text-xs text-emerald-200 flex items-center gap-2">
-          <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+        <div className="p-3.5 rounded-xl bg-emerald-950/80 border border-emerald-500/40 text-xs text-emerald-200 flex items-center gap-2">
+          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
           <span>{msg}</span>
         </div>
       )}
 
-      <div className="p-6 sm:p-8 rounded-2xl glass flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      {errMsg && (
+        <div className="p-3.5 rounded-xl bg-red-950/80 border border-red-500/40 text-xs text-red-200 flex items-center gap-2">
+          <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
+          <span>{errMsg}</span>
+        </div>
+      )}
+
+      <div className="p-5 sm:p-6 rounded-2xl glass flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div>
-          <span className="text-[11px] uppercase tracking-[0.25em] text-gala-gold font-semibold inline-flex items-center gap-1.5">
+          <span className="font-display text-[10.5px] uppercase tracking-[0.22em] text-gala-gold font-semibold inline-flex items-center gap-1.5">
             <Sparkles className="w-3.5 h-3.5 text-gala-silver" />
-            Apartado 3 · Alta Resolución
+            Cobertura Oficial · Alta Resolución
           </span>
-          <h2 className="font-serif text-3xl sm:text-4xl text-gala-ivory mt-1">
+          <h2 className="font-serif font-semibold text-2xl sm:text-4xl text-gala-ivory mt-1">
             Álbum del Fotógrafo Oficial
           </h2>
-          <p className="text-xs sm:text-sm text-gala-parchment/90 mt-1 max-w-2xl">
-            Fotografías profesionales de estudio y cobertura oficial donde termina el aula y comienza nuestra historia, listas para descargar en calidad original.
+          <p className="text-xs sm:text-sm text-gala-parchment/85 mt-1 max-w-2xl leading-relaxed">
+            Fotografías profesionales de estudio y cobertura oficial listas para descargar de forma individual o en paquete completo.
           </p>
         </div>
 
-        {currentUser?.rol === 'ADMIN' && (
-          <button
-            type="button"
-            onClick={() => setShowAdminUpload((p) => !p)}
-            className="px-5 py-3 rounded-xl btn-gold text-gala-obsidian font-semibold text-xs flex items-center gap-2 shrink-0"
-          >
-            <Upload className="w-4 h-4" />
-            <span>Subir Foto Oficial</span>
-          </button>
-        )}
+        <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+          {studioPhotos.length > 0 && (
+            <button
+              type="button"
+              disabled={downloadingZip}
+              onClick={handleDownloadFullAlbum}
+              className="px-4 py-2.5 rounded-xl btn-silver text-xs font-semibold text-gala-champagne flex items-center gap-2 disabled:opacity-50"
+            >
+              <FolderArchive className="w-4 h-4 text-gala-gold" />
+              <span>{downloadingZip ? 'Preparando ZIP...' : 'Descargar Álbum (.zip)'}</span>
+            </button>
+          )}
+
+          {currentUser?.rol === 'ADMIN' && (
+            <button
+              type="button"
+              onClick={() => setShowAdminUpload((p) => !p)}
+              className="px-4 py-2.5 rounded-xl btn-gold text-gala-obsidian font-semibold text-xs flex items-center gap-2"
+            >
+              <Upload className="w-4 h-4" />
+              <span>Subir Foto Oficial</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {showAdminUpload && currentUser?.rol === 'ADMIN' && (
@@ -144,12 +191,12 @@ export const PhotographerSection: React.FC<PhotographerSectionProps> = ({
             value={caption}
             onChange={(e) => setCaption(e.target.value)}
             placeholder="Título o descripción de la toma oficial..."
-            className="w-full px-4 py-2.5 rounded-xl bg-gala-obsidian border border-gala-silver/30 text-xs text-gala-ivory"
+            className="w-full px-4 py-2.5 rounded-xl bg-gala-obsidian border border-gala-silver/25 text-xs text-gala-ivory"
           />
           <button
             type="submit"
             disabled={uploading || !file}
-            className="px-5 py-2.5 rounded-xl btn-gold text-gala-obsidian font-semibold text-xs"
+            className="px-5 py-2.5 rounded-xl btn-gold text-gala-obsidian font-semibold text-xs disabled:opacity-40"
           >
             {uploading ? 'Publicando...' : 'Publicar en Álbum Oficial'}
           </button>
@@ -169,47 +216,51 @@ export const PhotographerSection: React.FC<PhotographerSectionProps> = ({
             {paginatedStudioPhotos.map((item, idx) => {
               const globalIdx = (safePage - 1) * pageSize + idx;
               return (
-                <div
+                <article
                   key={item.id}
-                  className="glass lift rounded-2xl overflow-hidden flex flex-col justify-between"
+                  className="glass lift rounded-2xl overflow-hidden flex flex-col justify-between group"
                 >
                   <div>
                     <div
                       onClick={() => setViewerIndex(globalIdx)}
-                      className="aspect-[4/3] bg-gala-obsidian cursor-pointer overflow-hidden"
+                      className="relative aspect-[4/3] bg-gala-obsidian cursor-pointer overflow-hidden"
                     >
                       <img
                         src={item.archivo_url}
                         alt={item.pie_de_foto}
-                        className="w-full h-full object-cover hover:scale-105 transition duration-500"
+                        className="w-full h-full object-cover group-hover:scale-105 transition duration-500"
                       />
+                      <div className="absolute inset-x-0 bottom-0 h-14 bg-gradient-to-t from-gala-obsidian/80 to-transparent pointer-events-none" />
+                      <span className="absolute top-2.5 left-2.5 px-2.5 py-0.5 rounded-full bg-gala-obsidian/70 backdrop-blur-md border border-gala-silver/20 text-[10px] font-display uppercase tracking-wider text-gala-champagne">
+                        Oficial #{globalIdx + 1}
+                      </span>
                     </div>
                     <div className="p-4">
-                      <p className="font-serif italic text-lg text-gala-ivory">
+                      <p className="font-serif italic text-lg text-gala-ivory leading-snug">
                         "{item.pie_de_foto}"
                       </p>
-                      <p className="text-xs text-gala-gold mt-1">
-                        Fotografía Oficial de Generación
+                      <p className="text-[11px] text-gala-gold/90 mt-1">
+                        Fotografía Oficial · Generación 2022 – 2026
                       </p>
                     </div>
                   </div>
-                  <div className="px-4 py-3 bg-gala-obsidian/85 border-t border-gala-silver/15 flex items-center justify-between">
+                  <div className="px-4 py-2.5 bg-gala-obsidian/70 border-t border-gala-silver/10 flex items-center justify-between">
                     <button
                       type="button"
                       onClick={() => setViewerIndex(globalIdx)}
-                      className="text-xs text-gala-champagne flex items-center gap-1"
+                      className="text-xs text-gala-champagne hover:text-gala-gold flex items-center gap-1.5 transition"
                     >
-                      <Eye className="w-3.5 h-3.5 text-gala-gold" /> Ver en grande
+                      <Eye className="w-3.5 h-3.5 text-gala-gold" /> Ampliar
                     </button>
                     <a
                       href={item.archivo_url}
                       download={item.nombre_original || `Oficial_${item.id}`}
-                      className="px-3.5 py-1.5 rounded-lg btn-gold text-gala-obsidian font-semibold text-xs flex items-center gap-1.5"
+                      className="px-3 py-1.5 rounded-lg btn-gold text-gala-obsidian font-semibold text-xs flex items-center gap-1.5"
                     >
                       <Download className="w-3.5 h-3.5" /> Descargar HD
                     </a>
                   </div>
-                </div>
+                </article>
               );
             })}
           </div>
@@ -225,82 +276,17 @@ export const PhotographerSection: React.FC<PhotographerSectionProps> = ({
         </div>
       )}
 
-      {/* Visor de pantalla completa mediante Portal */}
-      {typeof document !== 'undefined' &&
-        createPortal(
-          <AnimatePresence>
-            {viewerIndex !== null && studioPhotos[viewerIndex] && (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="fixed inset-0 z-[120] h-[100dvh] w-screen bg-gala-obsidian/95 backdrop-blur-xl flex flex-col justify-between p-4 sm:p-8 overflow-hidden"
-              >
-                <StageBackground />
-                <div className="relative z-20 flex items-center justify-between">
-                  <span className="px-3 py-1 rounded-full bg-gala-surface border border-gala-silver/30 text-xs font-mono text-gala-champagne">
-                    Foto Oficial {viewerIndex + 1} de {studioPhotos.length}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setViewerIndex(null)}
-                    className="px-3.5 py-2 rounded-xl bg-gala-surface border border-gala-silver/35 text-xs font-semibold text-gala-ivory flex items-center gap-1.5"
-                  >
-                    <X className="w-4 h-4 text-gala-gold" /> Cerrar
-                  </button>
-                </div>
-
-                <div className="relative z-20 flex-1 min-h-0 flex items-center justify-center my-3 overflow-hidden">
-                  <img
-                    src={studioPhotos[viewerIndex].archivo_url}
-                    alt={studioPhotos[viewerIndex].pie_de_foto}
-                    className="max-h-full max-w-full object-contain rounded-2xl border border-gala-silver/35 shadow-2xl"
-                  />
-                </div>
-
-                <div className="relative z-20 max-w-2xl mx-auto w-full text-center space-y-3">
-                  <div className="p-3.5 rounded-2xl glass">
-                    <p className="font-serif italic text-lg sm:text-xl text-gala-ivory">
-                      "{studioPhotos[viewerIndex].pie_de_foto}"
-                    </p>
-                  </div>
-                  <div className="flex items-center justify-center gap-2.5">
-                    <button
-                      type="button"
-                      disabled={viewerIndex === 0}
-                      onClick={() =>
-                        setViewerIndex((i) => Math.max(0, (i || 0) - 1))
-                      }
-                      className="px-3.5 py-2.5 rounded-xl btn-silver text-xs font-semibold text-gala-ivory disabled:opacity-35 flex items-center gap-1"
-                    >
-                      <SkipBack className="w-3.5 h-3.5 text-gala-gold" /> Anterior
-                    </button>
-                    <a
-                      href={studioPhotos[viewerIndex].archivo_url}
-                      download
-                      className="px-5 py-2.5 rounded-xl btn-gold text-gala-obsidian font-semibold text-xs flex items-center gap-1.5"
-                    >
-                      <Download className="w-3.5 h-3.5" /> Descargar Original
-                    </a>
-                    <button
-                      type="button"
-                      disabled={viewerIndex === studioPhotos.length - 1}
-                      onClick={() =>
-                        setViewerIndex((i) =>
-                          Math.min(studioPhotos.length - 1, (i || 0) + 1)
-                        )
-                      }
-                      className="px-3.5 py-2.5 rounded-xl btn-silver text-xs font-semibold text-gala-ivory disabled:opacity-35 flex items-center gap-1"
-                    >
-                      Siguiente <SkipForward className="w-3.5 h-3.5 text-gala-gold" />
-                    </button>
-                  </div>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>,
-          document.body
-        )}
+      {/* Visor Editorial con Swipe táctil y teclado */}
+      <EditorialLightbox
+        items={studioPhotos}
+        activeIndex={viewerIndex}
+        onClose={() => setViewerIndex(null)}
+        onChangeIndex={setViewerIndex}
+        badgeLabel={() => 'Fotografía Oficial HD'}
+        subtitleLabel={() => 'Estudio Fotográfico · Graduación TECNM'}
+        canDelete={() => currentUser?.rol === 'ADMIN'}
+        onDelete={handleDeleteOfficial}
+      />
     </div>
   );
 };

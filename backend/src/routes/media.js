@@ -1,11 +1,13 @@
 const express = require('express');
 const path = require('node:path');
+const fs = require('node:fs');
 const crypto = require('node:crypto');
 const multer = require('multer');
 const { db, STORAGE_UPLOADS_DIR } = require('../db/database');
 const { requireAuth } = require('./auth');
 const { verifyToken } = require('../utils/security');
 const { broadcastEvent } = require('../realtime/liveHub');
+const { buildZipBuffer } = require('../utils/zipBuilder');
 
 function optionalAuth(req, _res, next) {
   const authHeader = req.headers.authorization || '';
@@ -294,6 +296,127 @@ router.get('/my-uploads', requireAuth, (req, res) => {
   `).all(req.user.id);
 
   return res.json({ items });
+});
+
+/**
+ * Descarga completa en ZIP del Álbum del Fotógrafo Oficial para alumnos e invitados.
+ * GET /api/media/photographer-zip
+ */
+router.get('/photographer-zip', (_req, res) => {
+  const photos = db.prepare(`
+    SELECT m.*, u.nombre_completo as autor_nombre
+    FROM MediaItem m
+    JOIN User u ON u.id = m.usuario_id
+    WHERE (
+      m.estado = 'APROBADO_FOTOGRAFO' OR
+      (m.origen = 'FOTOGRAFO' AND m.estado NOT IN ('APROBADO_VIDEO', 'APROBADO_GALERIA', 'RECHAZADO'))
+    )
+    AND m.solicitud_retiro = 0
+    ORDER BY m.created_at ASC
+  `).all();
+
+  if (photos.length === 0) {
+    return res.status(404).json({ error: 'Aún no hay fotografías oficiales publicadas para descargar.' });
+  }
+
+  const zipEntries = [];
+  const manifestLines = [
+    '========================================================================',
+    'ALBUM OFICIAL DEL FOTOGRAFO - GRADUACION TECNM 2022 - 2026',
+    `Generado el: ${new Date().toLocaleString('es-MX')}`,
+    `Total de fotografías oficiales: ${photos.length}`,
+    '========================================================================',
+    '',
+  ];
+
+  for (let i = 0; i < photos.length; i++) {
+    const row = photos[i];
+    const seqPrefix = String(i + 1).padStart(3, '0');
+    const diskFilename = path.basename(row.archivo_url);
+    const fullPath = path.join(STORAGE_UPLOADS_DIR, diskFilename);
+    const ext = path.extname(diskFilename) || '.jpg';
+    const exportFilename = `${seqPrefix}_Oficial_Gala${ext}`;
+
+    if (fs.existsSync(fullPath)) {
+      zipEntries.push({
+        name: exportFilename,
+        data: fs.readFileSync(fullPath),
+      });
+    }
+
+    manifestLines.push(
+      `[${seqPrefix}] Archivo: ${exportFilename}`,
+      `      Descripción: "${row.pie_de_foto}"`,
+      `      Publicado por: ${row.autor_nombre}`,
+      ''
+    );
+  }
+
+  zipEntries.unshift({
+    name: '000_INDICE_FOTOGRAFO.txt',
+    data: Buffer.from(manifestLines.join('\n'), 'utf8'),
+  });
+
+  const zipBuffer = buildZipBuffer(zipEntries);
+  res.setHeader('Content-Type', 'application/zip');
+  res.setHeader('Content-Disposition', 'attachment; filename="Album_Fotografo_Oficial_TECNM.zip"');
+  res.setHeader('Content-Length', zipBuffer.length);
+  return res.send(zipBuffer);
+});
+
+/**
+ * Permite al autor (o a una organizadora Admin) eliminar una fotografía subida por error.
+ * DELETE /api/media/:id
+ */
+router.delete('/:id', requireAuth, (req, res) => {
+  const { id } = req.params;
+  const existing = db.prepare('SELECT * FROM MediaItem WHERE id = ?').get(id);
+
+  if (!existing) {
+    return res.status(404).json({ error: 'Fotografía o video no encontrado.' });
+  }
+
+  const isOwner = existing.usuario_id === req.user.id;
+  const isAdmin = req.user.rol === 'ADMIN';
+  if (!isOwner && !isAdmin) {
+    return res.status(403).json({
+      error: 'Solo la persona que subió este recuerdo o el comité pueden eliminarlo.',
+    });
+  }
+
+  db.prepare('DELETE FROM MediaItem WHERE id = ?').run(id);
+
+  // Re-compactar el orden del Storyboard si formaba parte del video
+  const seqRows = db.prepare('SELECT id FROM SequenceOrder ORDER BY orden ASC, updated_at ASC').all();
+  const updateSeq = db.prepare('UPDATE SequenceOrder SET orden = ? WHERE id = ?');
+  seqRows.forEach((row, index) => {
+    updateSeq.run(index + 1, row.id);
+  });
+
+  // Eliminar archivo físico del disco solo si ninguna otra fila lo referencia
+  if (existing.archivo_url) {
+    const stillUsed = db
+      .prepare('SELECT COUNT(*) as cnt FROM MediaItem WHERE archivo_url = ?')
+      .get(existing.archivo_url);
+    if (!stillUsed || stillUsed.cnt === 0) {
+      const diskFilename = path.basename(existing.archivo_url);
+      const fullPath = path.join(STORAGE_UPLOADS_DIR, diskFilename);
+      if (fs.existsSync(fullPath) && !diskFilename.startsWith('sample_')) {
+        try {
+          fs.unlinkSync(fullPath);
+        } catch {
+          // Ignorar error de IO si el archivo está bloqueado
+        }
+      }
+    }
+  }
+
+  broadcastEvent('MEDIA_MODERATED', { id, deleted: true });
+
+  return res.json({
+    message: 'Archivo eliminado correctamente.',
+    deletedId: id,
+  });
 });
 
 router.post('/:id/request-takedown', (req, res) => {

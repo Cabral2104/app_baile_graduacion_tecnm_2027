@@ -14,9 +14,11 @@ import {
   FileText,
   ExternalLink,
   Layers,
+  AlertTriangle,
 } from 'lucide-react';
 import { QrCodeMatrix } from './QrCodeMatrix';
 import { User, SystemConfig } from '../types';
+import { useGalaConfirm } from './GalaConfirmModal';
 
 interface TableQrKitProps {
   users: User[];
@@ -27,6 +29,7 @@ export type TableFormat = 'TENT' | 'SINGLE_A5' | 'MINI_CARDS';
 export type TableTheme = 'LIGHT_GOLD' | 'STARRY_NIGHT';
 
 export const TableQrKit: React.FC<TableQrKitProps> = ({ users, config }) => {
+  const confirm = useGalaConfirm();
   // 1. Detección automática de mesas presentes en la lista de alumnos
   const detectedMesas = useMemo(() => {
     const set = new Set<string>();
@@ -80,16 +83,33 @@ export const TableQrKit: React.FC<TableQrKitProps> = ({ users, config }) => {
   };
 
   // Handlers para administración de mesas
-  const handleLoadDetected = () => {
-    if (detectedMesas.length > 0) {
-      setMesas(detectedMesas);
-      setPreviewMesaIndex(0);
+  const handleLoadDetected = async () => {
+    if (detectedMesas.length === 0) return;
+    if (mesas.length > 0) {
+      const ok = await confirm({
+        title: '¿Reemplazar lista de mesas?',
+        description: `Se reemplazará la lista actual (${mesas.length} mesas) por las ${detectedMesas.length} mesas detectadas en el padrón oficial.`,
+        confirmText: 'Sí, cargar mesas',
+        variant: 'warning',
+      });
+      if (!ok) return;
     }
+    setMesas(detectedMesas);
+    setPreviewMesaIndex(0);
   };
 
-  const handleGenerateRange = () => {
+  const handleGenerateRange = async () => {
     const start = Math.max(1, rangeStart);
     const end = Math.max(start, rangeEnd);
+    if (mesas.length > 0) {
+      const ok = await confirm({
+        title: '¿Generar nueva lista de mesas?',
+        description: `Se reemplazará tu lista actual (${mesas.length} mesas) por el rango del ${start} al ${end}.`,
+        confirmText: 'Sí, generar rango',
+        variant: 'warning',
+      });
+      if (!ok) return;
+    }
     const list: string[] = [];
     for (let i = start; i <= end; i++) {
       list.push(`${rangePrefix}${String(i).padStart(2, '0')}`);
@@ -109,7 +129,14 @@ export const TableQrKit: React.FC<TableQrKitProps> = ({ users, config }) => {
     setNewMesaName('');
   };
 
-  const handleRemoveMesa = (mesaToRemove: string) => {
+  const handleRemoveMesa = async (mesaToRemove: string) => {
+    const ok = await confirm({
+      title: '¿Quitar mesa de impresión?',
+      description: `Se quitará "${mesaToRemove}" de la lista de carteles QR a imprimir.`,
+      confirmText: 'Sí, quitar',
+      variant: 'danger',
+    });
+    if (!ok) return;
     setMesas((prev) => {
       const next = prev.filter((m) => m !== mesaToRemove);
       if (previewMesaIndex >= next.length) {
@@ -289,18 +316,38 @@ export const TableQrKit: React.FC<TableQrKitProps> = ({ users, config }) => {
             </div>
 
             {/* Ajuste de Dominio / URL Base */}
-            <div className="glass p-4 rounded-2xl space-y-2">
-              <label className="text-xs font-semibold text-gala-champagne flex items-center gap-1.5">
-                <ExternalLink className="w-3.5 h-3.5 text-gala-gold" />
-                Dirección Web (URL Base del QR)
-              </label>
+            <div className="glass p-4 rounded-2xl space-y-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <label className="text-xs font-semibold text-gala-champagne flex items-center gap-1.5">
+                  <ExternalLink className="w-3.5 h-3.5 text-gala-gold" />
+                  Dirección Web (URL Base del QR)
+                </label>
+                {typeof window !== 'undefined' &&
+                  customOrigin !== window.location.origin && (
+                    <button
+                      type="button"
+                      onClick={() => setCustomOrigin(window.location.origin)}
+                      className="text-[10px] text-gala-gold hover:underline"
+                    >
+                      Usar actual
+                    </button>
+                  )}
+              </div>
               <input
                 type="text"
                 value={customOrigin}
                 onChange={(e) => setCustomOrigin(e.target.value)}
-                placeholder="http://192.168.1.50:5173 o https://midominio.com"
+                placeholder="https://graduacion-tecnm.com o http://192.168.1.50:5173"
                 className="w-full px-3 py-2 rounded-xl bg-gala-obsidian/80 border border-gala-silver/25 text-xs text-gala-ivory font-mono"
               />
+              {(customOrigin.includes('localhost') || customOrigin.includes('127.0.0.1')) && (
+                <div className="p-2.5 rounded-xl bg-amber-950/60 border border-amber-500/40 text-[11px] text-amber-200 flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                  <span>
+                    Estás usando <strong>localhost</strong>. Si imprimes los carteles así, los celulares de las mesas no podrán abrir el enlace. Cambia esta dirección por tu dominio público o la IP de red local antes de imprimir.
+                  </span>
+                </div>
+              )}
               <p className="text-[11px] text-gala-muted">
                 Tip: En el salón, si los celulares se conectan por WiFi o datos, coloca la IP local de tu laptop (ej. <code className="text-gala-champagne">http://192.168.1.X:5173</code>) o el dominio público.
               </p>

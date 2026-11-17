@@ -12,6 +12,8 @@ import {
   ShieldCheck,
   Sparkles,
   Heart,
+  QrCode,
+  Timer,
 } from 'lucide-react';
 import { MediaItem, SystemConfig } from '../types';
 import { api } from '../services/api';
@@ -47,6 +49,9 @@ export const LiveWallScreen: React.FC<LiveWallScreenProps> = ({ onExit }) => {
   const [config, setConfig] = useState<SystemConfig | null>(null);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(true);
+  const [slideDurationSec, setSlideDurationSec] = useState<5 | 8 | 12>(5);
+  const [showQrCard, setShowQrCard] = useState(true);
+  const [controlsVisible, setControlsVisible] = useState(true);
   const [backendConnected, setBackendConnected] = useState(true);
   const [bufferedCount, setBufferedCount] = useState(0);
   const [progressPct, setProgressPct] = useState(0);
@@ -57,6 +62,27 @@ export const LiveWallScreen: React.FC<LiveWallScreenProps> = ({ onExit }) => {
 
   const blobCacheRef = useRef<Map<string, string>>(new Map());
   const currentItemRef = useRef<MediaItem | null>(null);
+  const hideControlsTimerRef = useRef<number | null>(null);
+
+  // Modo Proyector Limpio: ocultar controles tras 3.5s sin mover el mouse (si está reproduciendo)
+  const revealControls = useCallback(() => {
+    setControlsVisible(true);
+    if (hideControlsTimerRef.current) {
+      window.clearTimeout(hideControlsTimerRef.current);
+    }
+    hideControlsTimerRef.current = window.setTimeout(() => {
+      setControlsVisible(false);
+    }, 3500);
+  }, []);
+
+  useEffect(() => {
+    revealControls();
+    return () => {
+      if (hideControlsTimerRef.current) {
+        window.clearTimeout(hideControlsTimerRef.current);
+      }
+    };
+  }, [revealControls]);
 
   useEffect(() => {
     localStorage.removeItem('gala_livewall_offline_cache_v1');
@@ -264,12 +290,12 @@ export const LiveWallScreen: React.FC<LiveWallScreenProps> = ({ onExit }) => {
     }
   }, [currentIndex, items.length, preloadUpcomingBuffer]);
 
-  // Avance automático inmune al polling cada 5 segundos
+  // Avance automático inmune al polling según la velocidad configurada (5s, 8s o 12s)
   useEffect(() => {
     if (!isPlaying || items.length === 0 || currentIsVideo) return;
 
     const stepMs = 80;
-    const totalMs = 5000;
+    const totalMs = slideDurationSec * 1000;
     const inc = (stepMs / totalMs) * 100;
 
     const interval = setInterval(() => {
@@ -283,7 +309,7 @@ export const LiveWallScreen: React.FC<LiveWallScreenProps> = ({ onExit }) => {
     }, stepMs);
 
     return () => clearInterval(interval);
-  }, [isPlaying, currentIndex, items.length, currentIsVideo]);
+  }, [isPlaying, currentIndex, items.length, currentIsVideo, slideDurationSec]);
 
   const resolvedMediaSrc = currentItem
     ? blobCacheRef.current.get(currentItem.archivo_url) || currentItem.archivo_url
@@ -297,14 +323,34 @@ export const LiveWallScreen: React.FC<LiveWallScreenProps> = ({ onExit }) => {
     }
   };
 
+  const showChrome = controlsVisible || !isPlaying || items.length === 0;
+
   return (
-    <div className="fixed inset-0 z-[120] h-[100dvh] w-screen bg-gala-obsidian text-gala-ivory flex flex-col justify-between overflow-hidden select-none">
+    <div
+      onMouseMove={revealControls}
+      onTouchStart={revealControls}
+      className="fixed inset-0 z-[120] h-[100dvh] w-screen bg-gala-obsidian text-gala-ivory flex flex-col justify-between overflow-hidden select-none"
+    >
       <StageBackground />
       <AmbientLeavesCanvas enabled density="subtle" />
-      <div className="pointer-events-none fixed inset-3 sm:inset-4 border border-gala-silver/25 rounded-2xl z-20" />
+      <div className="pointer-events-none fixed inset-3 sm:inset-4 border border-gala-silver/15 rounded-2xl z-20" />
 
-      {/* Barra Superior */}
-      <header className="relative z-30 px-4 sm:px-8 pt-5 pb-2 space-y-2.5">
+      {/* Línea fina de progreso en el borde superior */}
+      {items.length > 0 && (
+        <div className="fixed top-0 inset-x-0 h-[3px] z-40 bg-gala-obsidian/50">
+          <div
+            className="h-full bg-gradient-to-r from-gala-silver via-gala-gold to-gala-champagne transition-all duration-100 ease-linear"
+            style={{ width: `${currentIsVideo ? 100 : progressPct}%` }}
+          />
+        </div>
+      )}
+
+      {/* Barra Superior Cinematográfica (Auto-ocultable cuando el proyector está en reposo) */}
+      <header
+        className={`relative z-30 px-4 sm:px-8 pt-5 pb-1 transition-all duration-500 ${
+          showChrome ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-4 pointer-events-none'
+        }`}
+      >
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
             <button
@@ -315,35 +361,35 @@ export const LiveWallScreen: React.FC<LiveWallScreenProps> = ({ onExit }) => {
               <ArrowLeft className="w-4 h-4 text-gala-gold" /> Volver
             </button>
             <div className="min-w-0">
-              <div className="text-[10px] sm:text-[11px] uppercase tracking-[0.22em] text-gala-gold flex items-center gap-1.5 truncate">
+              <div className="text-[10px] sm:text-[11px] uppercase tracking-[0.2em] text-gala-gold flex items-center gap-1.5 truncate">
                 <Sparkles className="w-3 h-3 text-gala-silver shrink-0" />
-                <span>Carrusel en Vivo · Donde termina el aula y comienza nuestra historia</span>
+                <span>Proyector en Vivo · Donde termina el aula y comienza nuestra historia</span>
               </div>
-              <h1 className="font-serif text-lg sm:text-2xl text-gala-ivory truncate">
+              <h1 className="font-display font-semibold text-base sm:text-xl text-gala-ivory truncate">
                 {config?.titulo_evento || 'Graduación TECNM'}
               </h1>
             </div>
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
-            <div className="hidden md:flex px-3.5 py-1.5 rounded-full bg-gala-surface/90 border border-gala-silver/30 text-xs items-center gap-2">
+            <div className="hidden md:flex px-3 py-1.5 rounded-full bg-gala-surface/80 backdrop-blur-md border border-gala-silver/20 text-[11px] items-center gap-1.5">
               <ShieldCheck className="w-3.5 h-3.5 text-gala-gold" />
-              <span className="font-mono text-gala-silver">
-                Buffer: {bufferedCount}/{Math.min(BUFFER_AHEAD_COUNT, items.length)} listas
+              <span className="font-mono tabular-nums text-gala-silver">
+                Buffer: {bufferedCount}/{Math.min(BUFFER_AHEAD_COUNT, items.length)}
               </span>
             </div>
 
             <div
-              className={`px-3 py-1.5 rounded-full border text-xs flex items-center gap-1.5 ${
+              className={`px-3 py-1.5 rounded-full border text-[11px] flex items-center gap-1.5 backdrop-blur-md ${
                 backendConnected
-                  ? 'bg-emerald-950/60 border-emerald-500/40 text-emerald-300'
+                  ? 'bg-emerald-950/60 border-emerald-500/35 text-emerald-300'
                   : 'bg-red-950/70 border-red-500/40 text-red-300'
               }`}
             >
               {backendConnected ? (
                 <>
                   <Wifi className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Conectado</span> ({items.length})
+                  <span className="hidden sm:inline">En vivo</span> ({items.length})
                 </>
               ) : (
                 <>
@@ -356,22 +402,13 @@ export const LiveWallScreen: React.FC<LiveWallScreenProps> = ({ onExit }) => {
             <button
               type="button"
               onClick={requestFullScreen}
-              className="p-2.5 rounded-xl bg-gala-surface border border-gala-silver/30 text-gala-champagne hover:border-gala-gold"
+              className="p-2.5 rounded-xl bg-gala-surface/80 backdrop-blur-md border border-gala-silver/25 text-gala-champagne hover:border-gala-gold"
               title="Pantalla Completa para Proyector"
             >
               <Maximize2 className="w-4 h-4" />
             </button>
           </div>
         </div>
-
-        {items.length > 0 && (
-          <div className="w-full h-1.5 rounded-full bg-gala-surface/80 overflow-hidden border border-gala-silver/20">
-            <div
-              className="h-full bg-gradient-to-r from-gala-silver via-gala-gold to-gala-champagne transition-all duration-100 ease-linear"
-              style={{ width: `${currentIsVideo ? 100 : progressPct}%` }}
-            />
-          </div>
-        )}
       </header>
 
       {/* Visor Central */}
@@ -382,15 +419,25 @@ export const LiveWallScreen: React.FC<LiveWallScreenProps> = ({ onExit }) => {
               <AnimatePresence mode="wait">
                 <motion.div
                   key={currentItem.id}
-                  initial={{ opacity: 0, scale: 0.98 }}
-                  animate={{ opacity: 1, scale: 1.03 }}
+                  initial={{ opacity: 0, scale: 0.985 }}
+                  animate={{ opacity: 1, scale: 1 }}
                   exit={{ opacity: 0 }}
-                  transition={{
-                    opacity: { duration: 0.6 },
-                    scale: { duration: 5, ease: 'easeOut' },
-                  }}
-                  className="w-full h-full max-h-[52vh] lg:max-h-[68vh] flex items-center justify-center"
+                  transition={{ opacity: { duration: 0.55 } }}
+                  className="relative w-full h-full max-h-[56vh] lg:max-h-[76vh] rounded-2xl overflow-hidden border border-gala-silver/25 bg-gala-obsidian/90 shadow-2xl flex items-center justify-center"
                 >
+                  {/* Fondo Ambiental Difuminado: elimina los espacios vacíos en fotos verticales de celular */}
+                  {currentItem.tipo_medio === 'FOTO' && resolvedMediaSrc && (
+                    <>
+                      <img
+                        src={resolvedMediaSrc}
+                        alt=""
+                        aria-hidden="true"
+                        className="absolute inset-0 w-full h-full object-cover scale-125 blur-3xl opacity-35 pointer-events-none select-none"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-gala-obsidian/80 via-gala-obsidian/25 to-gala-obsidian/70 pointer-events-none" />
+                    </>
+                  )}
+
                   {currentItem.tipo_medio === 'VIDEO' ? (
                     <video
                       src={resolvedMediaSrc}
@@ -398,13 +445,16 @@ export const LiveWallScreen: React.FC<LiveWallScreenProps> = ({ onExit }) => {
                       onEnded={() =>
                         setCurrentIndex((prev) => (prev + 1) % items.length)
                       }
-                      className="max-h-full max-w-full object-contain rounded-2xl border border-gala-silver/35 shadow-2xl"
+                      className="relative z-10 max-h-full max-w-full object-contain shadow-2xl"
                     />
                   ) : (
-                    <img
+                    <motion.img
                       src={resolvedMediaSrc}
                       alt={currentItem.pie_de_foto}
-                      className="max-h-full max-w-full object-contain rounded-2xl border border-gala-silver/35 shadow-2xl"
+                      initial={{ scale: 1 }}
+                      animate={{ scale: 1.035 }}
+                      transition={{ duration: slideDurationSec, ease: 'easeOut' }}
+                      className="relative z-10 max-h-full max-w-full object-contain shadow-2xl"
                     />
                   )}
                 </motion.div>
@@ -448,22 +498,22 @@ export const LiveWallScreen: React.FC<LiveWallScreenProps> = ({ onExit }) => {
               </div>
             </div>
 
-            <div className="lg:col-span-4 flex flex-col justify-between gap-4">
-              <div className="p-5 sm:p-6 rounded-2xl glass space-y-3 shadow-2xl">
+            <div className="lg:col-span-4 flex flex-col justify-center gap-4">
+              <div className="p-5 sm:p-7 rounded-2xl glass glass-ornate space-y-4 shadow-2xl">
                 <div className="flex items-center justify-between">
-                  <span className="px-3 py-1 rounded-full bg-gala-gold/15 border border-gala-gold/40 text-[11px] font-mono uppercase text-gala-champagne">
+                  <span className="px-3 py-1 rounded-full bg-gala-gold/15 border border-gala-gold/40 text-[11px] font-display uppercase tracking-wider text-gala-champagne">
                     {currentItem.autor_mesa || 'Día de la Fiesta'}
                   </span>
-                  <span className="font-mono text-xs text-gala-silver">
-                    Foto {currentIndex + 1} de {items.length}
+                  <span className="font-mono tabular-nums text-xs text-gala-silver">
+                    {currentIndex + 1} / {items.length}
                   </span>
                 </div>
 
-                <blockquote className="font-serif italic text-xl sm:text-3xl text-gala-ivory leading-snug">
+                <blockquote className="font-serif italic text-2xl sm:text-3xl text-gala-ivory leading-snug">
                   "{currentItem.pie_de_foto}"
                 </blockquote>
 
-                <div className="pt-2.5 border-t border-gala-silver/20 flex items-center justify-between gap-3">
+                <div className="pt-3 border-t border-gala-silver/15 flex items-center justify-between gap-3">
                   <div className="min-w-0">
                     <div className="text-sm sm:text-base font-semibold text-gala-champagne truncate">
                       {currentItem.autor_nombre}
@@ -474,7 +524,7 @@ export const LiveWallScreen: React.FC<LiveWallScreenProps> = ({ onExit }) => {
                   </div>
 
                   {/* Contador de reacciones en tiempo real */}
-                  <div className="flex items-center gap-2 shrink-0">
+                  <div className="flex items-center gap-2 shrink-0 tabular-nums">
                     <motion.div
                       key={`heart-${currentItem.id}-${currentItem.reacciones_corazon || 0}`}
                       initial={{ scale: 1 }}
@@ -498,28 +548,30 @@ export const LiveWallScreen: React.FC<LiveWallScreenProps> = ({ onExit }) => {
                 </div>
               </div>
 
-              <div className="hidden sm:flex p-4 rounded-2xl glass items-center gap-4">
-                <div className="shrink-0">
-                  <QrCodeMatrix value={window.location.origin} size={74} />
-                </div>
-                <div className="space-y-1">
-                  <div className="text-xs uppercase tracking-widest text-gala-gold font-semibold">
-                    Sube tu Foto o Reacciona desde tu Mesa
+              {showQrCard && (
+                <div className="hidden sm:flex p-4 rounded-2xl glass items-center gap-4">
+                  <div className="shrink-0 bg-white p-1.5 rounded-xl">
+                    <QrCodeMatrix value={window.location.origin} size={72} />
                   </div>
-                  <p className="text-xs text-gala-silver leading-snug">
-                    Toca el corazón o la estrella desde tu celular y verás flotar tus reacciones aquí en la pantalla.
-                  </p>
+                  <div className="space-y-1">
+                    <div className="font-display text-[11px] uppercase tracking-widest text-gala-gold font-semibold">
+                      Participa desde tu Mesa
+                    </div>
+                    <p className="text-xs text-gala-silver/90 leading-snug">
+                      Escanea el QR de tu mesa para subir tus fotos o enviar corazones en vivo a esta pantalla.
+                    </p>
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           </>
         ) : (
-          <div className="col-span-12 max-w-xl mx-auto text-center space-y-4 p-8 rounded-2xl glass">
+          <div className="col-span-12 max-w-xl mx-auto text-center space-y-4 p-8 rounded-2xl glass glass-ornate">
             <p className="font-serif text-3xl text-gala-champagne">
               No hay fotos activas en el carrusel del Día de la Fiesta (0 fotos)
             </p>
             <p className="text-xs sm:text-sm text-gala-parchment/85 leading-relaxed">
-              Actualmente ninguna foto tiene el estatus de mostrarse en el <strong>Día de la Fiesta</strong>. Para que aparezcan aquí, entra al apartado <strong>4. Organizadoras</strong> y toca el botón <strong>"Día de la Fiesta"</strong> en las fotos que quieras proyectar.
+              Actualmente ninguna foto tiene el estatus de mostrarse en el <strong>Día de la Fiesta</strong>. Para que aparezcan aquí, entra al panel del <strong>Comité</strong> (ícono de escudo) y toca el botón <strong>"Día de la Fiesta"</strong> en las fotos que quieras proyectar.
             </p>
             <button
               type="button"
@@ -559,13 +611,49 @@ export const LiveWallScreen: React.FC<LiveWallScreenProps> = ({ onExit }) => {
         </div>
       </main>
 
-      {/* Controles Inferiores Siempre Visibles */}
-      <footer className="relative z-30 px-4 sm:px-8 pb-5 pt-2 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-gala-silver">
-        <div className="hidden sm:block">
-          Carrusel exclusivo para fotos aprobadas en "Día de la Fiesta"
+      {/* Controles Inferiores Auto-ocultables con selector de velocidad y toggle de QR */}
+      <footer
+        className={`relative z-30 px-4 sm:px-8 pb-5 pt-2 flex flex-wrap items-center justify-between gap-3 text-xs text-gala-silver transition-all duration-500 ${
+          showChrome ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4 pointer-events-none'
+        }`}
+      >
+        <div className="flex items-center gap-2">
+          <div className="inline-flex items-center gap-1 p-1 rounded-xl bg-gala-obsidian/70 border border-gala-silver/20 backdrop-blur-md">
+            <Timer className="w-3.5 h-3.5 text-gala-gold ml-1.5 mr-0.5" />
+            {([5, 8, 12] as const).map((sec) => (
+              <button
+                key={sec}
+                type="button"
+                onClick={() => setSlideDurationSec(sec)}
+                className={`px-2 py-1 rounded-lg font-mono text-[11px] transition ${
+                  slideDurationSec === sec
+                    ? 'bg-gala-gold text-gala-obsidian font-bold'
+                    : 'text-gala-silver hover:text-gala-ivory'
+                }`}
+                title={`Cambiar foto cada ${sec} segundos`}
+              >
+                {sec}s
+              </button>
+            ))}
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setShowQrCard((prev) => !prev)}
+            className={`hidden sm:inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border text-[11px] font-medium backdrop-blur-md transition ${
+              showQrCard
+                ? 'bg-gala-obsidian/70 border-gala-silver/25 text-gala-champagne'
+                : 'bg-gala-gold/20 border-gala-gold text-gala-champagne'
+            }`}
+            title="Mostrar u ocultar tarjeta QR durante discursos o brindis"
+          >
+            <QrCode className="w-3.5 h-3.5 text-gala-gold" />
+            <span>{showQrCard ? 'Ocultar QR' : 'Mostrar QR'}</span>
+          </button>
         </div>
+
         {items.length > 0 && (
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={() => {
@@ -574,22 +662,22 @@ export const LiveWallScreen: React.FC<LiveWallScreenProps> = ({ onExit }) => {
                   prev === 0 ? items.length - 1 : prev - 1
                 );
               }}
-              className="px-3.5 py-2.5 rounded-xl btn-silver text-gala-ivory flex items-center gap-1.5 font-semibold"
+              className="px-3.5 py-2 rounded-xl btn-silver text-gala-ivory flex items-center gap-1.5 font-semibold"
             >
               <SkipBack className="w-3.5 h-3.5 text-gala-gold" /> Anterior
             </button>
             <button
               type="button"
               onClick={() => setIsPlaying((p) => !p)}
-              className="px-5 py-2.5 rounded-xl btn-gold text-gala-obsidian font-semibold flex items-center gap-1.5 shadow-lg"
+              className="px-5 py-2 rounded-xl btn-gold text-gala-obsidian font-semibold flex items-center gap-1.5 shadow-lg"
             >
               {isPlaying ? (
                 <>
-                  <Pause className="w-3.5 h-3.5 fill-current" /> Pausar Carrusel
+                  <Pause className="w-3.5 h-3.5 fill-current" /> Pausar
                 </>
               ) : (
                 <>
-                  <Play className="w-3.5 h-3.5 fill-current" /> Reproducir Carrusel
+                  <Play className="w-3.5 h-3.5 fill-current" /> Reproducir
                 </>
               )}
             </button>
@@ -601,7 +689,7 @@ export const LiveWallScreen: React.FC<LiveWallScreenProps> = ({ onExit }) => {
                   items.length > 0 ? (prev + 1) % items.length : 0
                 );
               }}
-              className="px-3.5 py-2.5 rounded-xl btn-silver text-gala-ivory flex items-center gap-1.5 font-semibold"
+              className="px-3.5 py-2 rounded-xl btn-silver text-gala-ivory flex items-center gap-1.5 font-semibold"
             >
               Siguiente <SkipForward className="w-3.5 h-3.5 text-gala-gold" />
             </button>

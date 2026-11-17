@@ -66,7 +66,7 @@ router.get('/search', (req, res) => {
     rows = db.prepare(`
       SELECT id, nombre_completo, distintivo_homonimo, mesa, rol, pin_hash
       FROM User
-      WHERE activo = 1
+      WHERE activo = 1 AND rol IN ('ALUMNO', 'ADMIN')
       ORDER BY rol DESC, nombre_completo ASC
       LIMIT 30
     `).all();
@@ -75,7 +75,7 @@ router.get('/search', (req, res) => {
     const allUsers = db.prepare(`
       SELECT id, nombre_completo, nombre_normalizado, distintivo_homonimo, mesa, rol, pin_hash
       FROM User
-      WHERE activo = 1
+      WHERE activo = 1 AND rol IN ('ALUMNO', 'ADMIN')
       ORDER BY nombre_completo ASC
     `).all();
 

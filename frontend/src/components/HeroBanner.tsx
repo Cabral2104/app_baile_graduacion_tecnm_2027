@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { ArrowRight, GraduationCap, Sparkles } from 'lucide-react';
+import { ArrowRight, ChevronDown, ChevronUp, GraduationCap, Sparkles } from 'lucide-react';
 
 export interface PhaseCopy {
   badge: string;
@@ -12,8 +12,11 @@ export interface PhaseCopy {
 interface HeroBannerProps {
   phase: PhaseCopy;
   firstName?: string;
-  /** Versión reducida para los demás apartados */
+  /** Versión reducida para evitar saturar antes de ver las fotografías */
   compact?: boolean;
+  /** Permite expandir/contraer manualmente la portada monumental */
+  onToggleCompact?: () => void;
+  canExpand?: boolean;
   showCta: boolean;
   onCta: () => void;
 }
@@ -140,32 +143,57 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({
   phase,
   firstName,
   compact = false,
+  onToggleCompact,
+  canExpand = false,
   showCta,
   onCta,
 }) => {
   if (compact) {
     return (
       <motion.section
-        initial={{ opacity: 0, y: 12 }}
+        initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
-        className="glass rounded-2xl overflow-hidden mb-6"
+        className="glass rounded-2xl px-4 sm:px-5 py-2.5 mb-5 flex flex-wrap items-center justify-between gap-2 text-xs text-gala-parchment"
       >
-        <StarryMarqueeCarousel />
-        <div className="px-4 sm:px-5 py-3 flex flex-col sm:flex-row items-center justify-between gap-1.5 sm:gap-3 text-xs text-gala-parchment border-t border-gala-silver/15 text-center sm:text-left">
-          <div className="flex items-center justify-center sm:justify-start gap-2 min-w-0">
-            <span className="w-2 h-2 rounded-full bg-gala-leaf animate-pulse shrink-0" />
-            <span className="uppercase tracking-[0.14em] sm:tracking-[0.18em] text-[11px] text-gala-champagne font-semibold">
-              {phase.badge}
-            </span>
-            <span className="hidden md:inline text-gala-silver/50">·</span>
-            <span className="hidden md:inline truncate text-gala-silver">
-              {phase.title}
-            </span>
-          </div>
-          <span className="text-[11px] font-serif italic tracking-wide text-gala-silver/85 flex items-center gap-1.5">
-            <Sparkles className="w-3 h-3 text-gala-gold shrink-0" />
-            <span>Donde termina el aula y comienza nuestra historia</span>
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="w-2 h-2 rounded-full bg-gala-leaf animate-pulse shrink-0" />
+          <span className="uppercase tracking-[0.16em] text-[10px] sm:text-[11px] text-gala-champagne font-semibold shrink-0">
+            {phase.badge}
           </span>
+          <span className="hidden sm:inline text-gala-silver/40">·</span>
+          <span className="hidden sm:inline truncate text-gala-silver/90">
+            {phase.title}
+          </span>
+        </div>
+
+        <div className="flex items-center gap-2.5 ml-auto">
+          <span className="hidden lg:inline-flex items-center gap-1.5 text-[11px] font-serif italic tracking-wide text-gala-silver/80">
+            <Sparkles className="w-3 h-3 text-gala-gold shrink-0" />
+            Donde termina el aula y comienza nuestra historia
+          </span>
+
+          {showCta && (
+            <button
+              type="button"
+              onClick={onCta}
+              className="px-3 py-1 rounded-lg bg-gala-gold/15 hover:bg-gala-gold/25 border border-gala-gold/40 text-gala-champagne text-[11px] font-semibold inline-flex items-center gap-1 transition"
+            >
+              <span>{phase.cta}</span>
+              <ArrowRight className="w-3 h-3" />
+            </button>
+          )}
+
+          {canExpand && onToggleCompact && (
+            <button
+              type="button"
+              onClick={onToggleCompact}
+              className="px-2.5 py-1 rounded-lg bg-gala-obsidian/60 hover:bg-gala-surface border border-gala-silver/20 text-[11px] text-gala-silver hover:text-gala-ivory inline-flex items-center gap-1 transition"
+              title="Mostrar portada de bienvenida"
+            >
+              <span>Ver portada</span>
+              <ChevronDown className="w-3 h-3 text-gala-gold" />
+            </button>
+          )}
         </div>
       </motion.section>
     );
@@ -175,75 +203,91 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({
     <motion.section
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      className="relative mb-8"
+      className="relative mb-6"
     >
-      <div className="glass rounded-3xl sm:rounded-[2rem] overflow-hidden">
-        <div className="relative px-5 sm:px-10 pt-9 sm:pt-12 pb-8 sm:pb-10 flex flex-col items-center text-center">
+      <div className="glass glass-ornate rounded-3xl sm:rounded-[2rem] overflow-hidden">
+        <div className="relative px-4 sm:px-10 pt-4 sm:pt-6 pb-7 sm:pb-9 flex flex-col items-center text-center">
           {/* Nebulosa luminosa azul, plata y oro detrás del título */}
           <div className="absolute left-1/2 top-1/3 -translate-x-1/2 -translate-y-1/2 w-[85%] h-64 rounded-full bg-gradient-to-r from-gala-royal/25 via-gala-silver/15 to-gala-gold/20 blur-3xl pointer-events-none" />
 
+          {/* Barra superior en flujo normal para evitar solapamientos en celular */}
+          {onToggleCompact && (
+            <div className="relative z-20 w-full flex justify-end mb-3">
+              <button
+                type="button"
+                onClick={onToggleCompact}
+                className="px-3 py-1.5 rounded-full bg-gala-obsidian/70 hover:bg-gala-surface border border-gala-silver/25 text-[11px] text-gala-silver hover:text-gala-ivory inline-flex items-center gap-1 transition backdrop-blur-md"
+                title="Minimizar portada para ir directo a las fotos"
+              >
+                <span className="hidden sm:inline">Ir directo a las fotos</span>
+                <span className="sm:hidden">Minimizar</span>
+                <ChevronUp className="w-3.5 h-3.5 text-gala-gold" />
+              </button>
+            </div>
+          )}
+
           {/* Distintivo superior con la frase de graduación */}
-          <div className="relative mb-4 inline-flex items-center justify-center gap-2 px-3.5 py-1.5 rounded-full bg-gala-surface/80 border border-gala-silver/30 text-[10px] sm:text-[11px] uppercase tracking-[0.1em] sm:tracking-[0.18em] text-gala-silver max-w-full">
+          <div className="relative mb-4 inline-flex items-center justify-center gap-2 px-3.5 py-1.5 rounded-full bg-gala-surface/80 border border-gala-silver/25 text-[10px] sm:text-[11px] uppercase tracking-[0.1em] sm:tracking-[0.18em] text-gala-silver max-w-full">
             <Sparkles className="w-3 h-3 text-gala-gold shrink-0" />
             <span className="leading-snug">Donde termina el aula y comienza nuestra historia</span>
           </div>
 
-          <Seal className="relative w-28 h-28 sm:w-36 sm:h-36 mb-5" />
+          <Seal className="relative w-24 h-24 sm:w-32 sm:h-32 mb-4" />
 
           <motion.p
             initial={{ opacity: 0, letterSpacing: '0.45em' }}
             animate={{ opacity: 1, letterSpacing: '0.28em' }}
-            transition={{ duration: 1, delay: 0.1 }}
+            transition={{ duration: 0.9, delay: 0.1 }}
             className="relative font-display text-[10px] sm:text-xs uppercase text-gala-silver"
           >
             Tecnológico Nacional de México
           </motion.p>
 
-          <h2 className="relative font-display font-bold leading-[0.96] mt-2.5 text-[clamp(2rem,8.8vw,5rem)] tracking-[0.04em] text-gala-ivory">
-            <AnimatedWord text="GRADUACIÓN" delay={0.2} />
+          <h2 className="relative font-display font-bold leading-[0.96] mt-2 text-[clamp(2rem,8.2vw,4.6rem)] tracking-[0.04em] text-gala-ivory">
+            <AnimatedWord text="GRADUACIÓN" delay={0.15} />
             <br />
             <AnimatedWord
               text="TECNM"
-              delay={0.7}
-              className="text-shimmer text-[clamp(3.1rem,15vw,8.4rem)] tracking-[0.08em]"
+              delay={0.55}
+              className="text-shimmer text-[clamp(3rem,14vw,7.5rem)] tracking-[0.08em]"
             />
           </h2>
 
-          <div className="relative ornament w-52 sm:w-80 mt-4" />
+          <div className="relative ornament w-48 sm:w-72 mt-3.5" />
           <motion.p
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            transition={{ delay: 1.1 }}
-            className="relative font-serif italic text-xl sm:text-2xl text-gala-silver mt-2.5"
+            transition={{ delay: 0.9 }}
+            className="relative font-serif italic text-xl sm:text-2xl text-gala-silver mt-2"
           >
             Generación 2022 – 2026
           </motion.p>
 
           {/* Mensaje según la fase del evento */}
           <motion.div
-            initial={{ opacity: 0, y: 14 }}
+            initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 1.25, duration: 0.55 }}
-            className="relative mt-6 max-w-xl"
+            transition={{ delay: 1.0, duration: 0.5 }}
+            className="relative mt-5 max-w-xl"
           >
             <span className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-gala-gold/15 border border-gala-gold/40 text-[11px] uppercase tracking-[0.18em] text-gala-champagne font-semibold">
               <span className="w-1.5 h-1.5 rounded-full bg-gala-leaf animate-pulse" />
               {phase.badge}
             </span>
-            <p className="text-lg sm:text-xl font-semibold text-gala-ivory mt-3">
+            <p className="font-serif text-xl sm:text-2xl font-semibold text-gala-ivory mt-2.5">
               {firstName ? `${firstName}, ` : ''}
               {firstName
                 ? phase.title.charAt(0).toLowerCase() + phase.title.slice(1)
                 : phase.title}
             </p>
-            <p className="text-xs sm:text-sm text-gala-parchment/90 mt-2 leading-relaxed">
+            <p className="text-xs sm:text-sm text-gala-parchment/90 mt-1.5 leading-relaxed">
               {phase.text}
             </p>
             {showCta && (
               <button
                 type="button"
                 onClick={onCta}
-                className="btn-gold mt-5 px-6 py-3 rounded-xl font-semibold text-sm inline-flex items-center gap-2 animate-glow-pulse"
+                className="btn-gold mt-4 px-6 py-2.5 rounded-xl font-semibold text-xs sm:text-sm inline-flex items-center gap-2 animate-glow-pulse"
               >
                 {phase.cta} <ArrowRight className="w-4 h-4" />
               </button>

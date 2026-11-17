@@ -1,4 +1,4 @@
-export type UserRole = 'ALUMNO' | 'ADMIN';
+export type UserRole = 'ALUMNO' | 'ADMIN' | 'INVITADO';
 
 export type MediaOrigen = 'PRE_EVENTO' | 'EN_VIVO' | 'FOTOGRAFO';
 export type MediaEtapa = 'INICIO' | 'SUPERVIVENCIA' | 'RECTA_FINAL' | 'GALA';
