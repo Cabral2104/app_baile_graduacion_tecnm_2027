@@ -174,6 +174,20 @@ export const api = {
       body: JSON.stringify({ estado, restaurarPrivacidad }),
     }),
 
+  moderateMediaBatch: (
+    ids: string[],
+    mode: 'BY_ORIGIN' | 'APROBADO_VIDEO' | 'APROBADO_GALERIA' | 'RECHAZADO' = 'BY_ORIGIN'
+  ) =>
+    requestJson<{
+      message: string;
+      updatedCount: number;
+      videoCount: number;
+      galleryCount: number;
+    }>('/api/admin/media/moderate-batch', {
+      method: 'POST',
+      body: JSON.stringify({ ids, mode }),
+    }),
+
   reorderStoryboard: (
     items: Array<{ media_item_id: string; duracion_display_seg?: number; transicion?: string }>
   ) =>
@@ -196,6 +210,19 @@ export const api = {
     requestJson<{ message: string; createdCount: number }>('/api/admin/users', {
       method: 'POST',
       body: JSON.stringify(payload),
+    }),
+
+  createUsersBatch: (
+    batch: Array<{
+      nombre_completo: string;
+      distintivo_homonimo?: string;
+      mesa?: string;
+      rol?: 'ALUMNO' | 'ADMIN';
+    }>
+  ) =>
+    requestJson<{ message: string; createdCount: number }>('/api/admin/users', {
+      method: 'POST',
+      body: JSON.stringify({ batch }),
     }),
 
   updateUser: (

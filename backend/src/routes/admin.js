@@ -189,6 +189,112 @@ router.patch('/media/:id/moderate', requireAdmin, (req, res) => {
 });
 
 /**
+ * 2b. Moderación en lote (ej. aprobar todas las fotos pendientes visibles)
+ * POST /api/admin/media/moderate-batch
+ * Body: { ids: string[], mode?: 'BY_ORIGIN' | 'APROBADO_VIDEO' | 'APROBADO_GALERIA' | 'RECHAZADO' }
+ */
+router.post('/media/moderate-batch', requireAdmin, (req, res) => {
+  const rawIds = Array.isArray(req.body?.ids) ? req.body.ids : [];
+  const ids = Array.from(
+    new Set(rawIds.map((id) => String(id || '').trim()).filter(Boolean))
+  ).slice(0, 200);
+
+  if (ids.length === 0) {
+    return res.status(400).json({ error: 'No se seleccionaron elementos para moderar.' });
+  }
+
+  const rawMode = String(req.body?.mode || 'BY_ORIGIN').toUpperCase();
+  const allowedModes = ['BY_ORIGIN', 'APROBADO_VIDEO', 'APROBADO_GALERIA', 'RECHAZADO'];
+  const mode = allowedModes.includes(rawMode) ? rawMode : 'BY_ORIGIN';
+
+  const now = new Date().toISOString();
+  let updatedCount = 0;
+  let videoCount = 0;
+  let galleryCount = 0;
+  let touchedStoryboard = false;
+
+  const selectItemStmt = db.prepare('SELECT id, origen, tipo_medio, duracion_seg FROM MediaItem WHERE id = ?');
+  const updateMediaStmt = db.prepare(`
+    UPDATE MediaItem
+    SET estado = ?, moderado_por_id = ?, moderado_en = ?, solicitud_retiro = 0
+    WHERE id = ?
+  `);
+  const existingSeqStmt = db.prepare('SELECT id FROM SequenceOrder WHERE media_item_id = ?');
+  const maxOrdenStmt = db.prepare('SELECT COALESCE(MAX(orden), 0) as maxOrden FROM SequenceOrder');
+  const insertSeqStmt = db.prepare(`
+    INSERT INTO SequenceOrder (id, media_item_id, orden, duracion_display_seg, transicion, notas_editor, updated_at)
+    VALUES (?, ?, ?, ?, 'KEN_BURNS', ?, ?)
+  `);
+  const deleteSeqStmt = db.prepare('DELETE FROM SequenceOrder WHERE media_item_id = ?');
+
+  db.exec('BEGIN');
+  try {
+    let nextOrden = (maxOrdenStmt.get()?.maxOrden || 0) + 1;
+
+    for (const id of ids) {
+      const item = selectItemStmt.get(id);
+      if (!item) continue;
+
+      const targetEstado =
+        mode === 'BY_ORIGIN'
+          ? item.origen === 'PRE_EVENTO'
+            ? 'APROBADO_VIDEO'
+            : 'APROBADO_GALERIA'
+          : mode;
+
+      updateMediaStmt.run(targetEstado, req.user.id, now, id);
+      updatedCount++;
+
+      if (targetEstado === 'APROBADO_VIDEO') {
+        videoCount++;
+        if (!existingSeqStmt.get(id)) {
+          const defaultDur =
+            item.tipo_medio === 'VIDEO' && item.duracion_seg
+              ? Math.round(item.duracion_seg)
+              : 4;
+          insertSeqStmt.run(
+            crypto.randomUUID(),
+            id,
+            nextOrden++,
+            defaultDur,
+            `Aprobado en lote por ${req.user.nombre_completo}`,
+            now
+          );
+          touchedStoryboard = true;
+        }
+      } else {
+        if (targetEstado === 'APROBADO_GALERIA') galleryCount++;
+        const delResult = deleteSeqStmt.run(id);
+        if (delResult.changes > 0) touchedStoryboard = true;
+      }
+    }
+
+    if (touchedStoryboard) {
+      compactStoryboardOrder();
+    }
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    return res.status(500).json({ error: err?.message || 'Error al moderar el lote seleccionado.' });
+  }
+
+  broadcastEvent(mode === 'RECHAZADO' ? 'MEDIA_MODERATED' : 'MEDIA_APPROVED', {
+    batch: true,
+    updatedCount,
+  });
+  if (touchedStoryboard) {
+    broadcastEvent('SEQUENCE_UPDATED', { batch: true });
+  }
+
+  return res.json({
+    message: `Se procesaron ${updatedCount} archivo(s) (${videoCount} a Memorias/Video, ${galleryCount} a Día de la Fiesta).`,
+    updatedCount,
+    videoCount,
+    galleryCount,
+  });
+});
+
+/**
  * 3. Reordenar Storyboard Secuencial (Drag & Drop) y configurar duración de fotos
  * PUT /api/admin/storyboard/reorder
  * Body: { items: [{ media_item_id: string, duracion_display_seg?: number, transicion?: string }] }

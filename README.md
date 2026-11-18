@@ -96,12 +96,15 @@ Abre en tu navegador:
 
 ---
 
-## Cuentas Precargadas para Probar de Inmediato
+## Despliegue en Producción (Railway + Disco Persistente)
 
-Al tocar el botón **"Identificarme"** arriba a la derecha (o usando los 3 botones de acceso rápido al pie de la ventana):
+1. Conecta el repositorio en Railway apuntando a la rama **`main`**.
+2. Crea un **Volume** persistente montado en **`/data`**.
+3. Configura las variables de entorno recomendadas:
+   - `DATA_DIR=/data` *(guarda `graduacion.db`, `uploads/` y `exports/` fuera de los reinicios del código)*
+   - `JWT_SECRET=<clave-larga-secreta>`
+   - `ADMIN_INITIAL_PIN=<pin-secreto-de-4-digitos>`
+   - `ADMIN_INITIAL_NAME=<nombre-de-organizadora-inicial>` *(opcional)*
+   - `SEED_DEMO_USERS=false` *(opcional: omite alumnos de ejemplo al iniciar BD nueva)*
+   - `SEED_DEMO_MEDIA=false` *(opcional: omite las 6 fotos SVG de prueba al iniciar BD nueva)*
 
-| Perfil | Nombre en la Lista | PIN de 4 dígitos |
-| :--- | :--- | :--- |
-| **Alumno en Primer Ingreso** | `María Fernanda López García` *(Ing. Industrial o Arquitectura)* | Sin PIN (te pedirá crear uno de 4 dígitos) |
-| **Alumno con PIN Activo** | `Alejandro Morales Vega` | **`1234`** |
-| **Organizadora (Comité)** | `Sofía Villalobos Mondragón` | **`2026`** |

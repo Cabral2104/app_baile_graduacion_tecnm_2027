@@ -1,0 +1,14 @@
+{
+  "name": "app-baile-graduacion-tecnm",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Plataforma Full-Stack Graduación TECNM · Generación 2022–2026",
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "scripts": {
+    "build": "npm --prefix backend install --omit=dev && npm --prefix frontend install --include=dev && npm --prefix frontend run build",
+    "build:local": "npm --prefix frontend run build",
+    "start": "node backend/src/server.js"
+  }
+}

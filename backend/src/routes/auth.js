@@ -5,6 +5,52 @@ const { normalizeText, hashPin, verifyPin, signToken, verifyToken } = require('.
 
 const router = express.Router();
 
+// Limitador de intentos fallidos de PIN en memoria (protege contra fuerza bruta en línea)
+const PIN_WINDOW_MS = 10 * 60 * 1000;
+const PIN_LOCK_MS = 5 * 60 * 1000;
+const MAX_FAILS_PER_USER_IP = 5;
+const MAX_FAILS_PER_IP = 35;
+const pinAttemptBuckets = new Map();
+
+function getClientIp(req) {
+  return String(req.ip || req.socket?.remoteAddress || 'unknown');
+}
+
+function getActiveLockRemainingMs(key, now) {
+  const entry = pinAttemptBuckets.get(key);
+  if (!entry) return 0;
+  if (entry.blockedUntil && entry.blockedUntil > now) {
+    return entry.blockedUntil - now;
+  }
+  if (now - entry.firstAttemptAt > PIN_WINDOW_MS) {
+    pinAttemptBuckets.delete(key);
+  }
+  return 0;
+}
+
+function recordFailedPinAttempt(key, limit, now) {
+  if (pinAttemptBuckets.size > 2000) {
+    for (const [k, v] of pinAttemptBuckets.entries()) {
+      if (now - v.firstAttemptAt > PIN_WINDOW_MS && (!v.blockedUntil || v.blockedUntil <= now)) {
+        pinAttemptBuckets.delete(k);
+      }
+    }
+  }
+  const existing = pinAttemptBuckets.get(key);
+  if (!existing || now - existing.firstAttemptAt > PIN_WINDOW_MS) {
+    pinAttemptBuckets.set(key, {
+      count: 1,
+      firstAttemptAt: now,
+      blockedUntil: 0,
+    });
+    return;
+  }
+  existing.count += 1;
+  if (existing.count >= limit) {
+    existing.blockedUntil = now + PIN_LOCK_MS;
+  }
+}
+
 /**
  * Middleware para autenticar peticiones mediante JWT en header Authorization.
  */
@@ -104,6 +150,21 @@ router.get('/search', (req, res) => {
 router.post('/verify-pin', (req, res) => {
   const { userId, pin } = req.body || {};
   const cleanPin = String(pin || '').trim();
+  const clientIp = getClientIp(req);
+  const nowMs = Date.now();
+  const userIpKey = `u:${clientIp}:${String(userId || '')}`;
+  const ipKey = `ip:${clientIp}`;
+
+  const lockMs = Math.max(
+    getActiveLockRemainingMs(userIpKey, nowMs),
+    getActiveLockRemainingMs(ipKey, nowMs)
+  );
+  if (lockMs > 0) {
+    const waitMins = Math.max(1, Math.ceil(lockMs / 60000));
+    return res.status(429).json({
+      error: `Por seguridad, demasiados intentos fallidos de PIN. Espera ${waitMins} minuto(s) o pide a una organizadora que restablezca tu PIN.`,
+    });
+  }
 
   if (!userId || !/^\d{4}$/.test(cleanPin)) {
     return res.status(400).json({
@@ -130,14 +191,18 @@ router.post('/verify-pin', (req, res) => {
     const now = new Date().toISOString();
     db.prepare('UPDATE User SET pin_hash = ?, updated_at = ? WHERE id = ?').run(hashed, now, user.id);
     authStatus = 'PIN_CREATED';
+    pinAttemptBuckets.delete(userIpKey);
   } else {
     // Ingresos posteriores: verificar PIN contra el hash
     const isValid = verifyPin(cleanPin, user.pin_hash);
     if (!isValid) {
+      recordFailedPinAttempt(userIpKey, MAX_FAILS_PER_USER_IP, nowMs);
+      recordFailedPinAttempt(ipKey, MAX_FAILS_PER_IP, nowMs);
       return res.status(401).json({
         error: 'PIN incorrecto. Si olvidaste tu PIN, pide a una organizadora que lo restablezca desde su panel.',
       });
     }
+    pinAttemptBuckets.delete(userIpKey);
   }
 
   const sessionUser = {

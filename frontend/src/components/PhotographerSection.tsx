@@ -42,7 +42,11 @@ export const PhotographerSection: React.FC<PhotographerSectionProps> = ({
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
   const [showAdminUpload, setShowAdminUpload] = useState(false);
   const [caption, setCaption] = useState('');
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
+  const [uploadProgress, setUploadProgress] = useState<{
+    current: number;
+    total: number;
+  } | null>(null);
   const [uploading, setUploading] = useState(false);
   const [downloadingZip, setDownloadingZip] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
@@ -56,27 +60,101 @@ export const PhotographerSection: React.FC<PhotographerSectionProps> = ({
     safePage * pageSize
   );
 
+  const handleSelectOfficialFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const picked = Array.from(e.target.files || []);
+    if (picked.length === 0) return;
+
+    const validImages: File[] = [];
+    let skipped = 0;
+    for (const f of picked) {
+      if (!f.type.startsWith('image/') || f.size > 50 * 1024 * 1024) {
+        skipped++;
+        continue;
+      }
+      validImages.push(f);
+    }
+
+    if (skipped > 0) {
+      setErrMsg(
+        `Se omitieron ${skipped} archivo(s) por no ser imagen válida o superar 50 MB.`
+      );
+    } else {
+      setErrMsg(null);
+    }
+    setFiles(validImages);
+  };
+
   const handleUploadOfficial = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!file || !caption.trim()) return;
+    if (files.length === 0) return;
+
+    const baseCaption = caption.trim();
+    const ok = await confirm({
+      title:
+        files.length === 1
+          ? '¿Publicar fotografía oficial?'
+          : `¿Publicar ${files.length} fotografías oficiales?`,
+      description:
+        files.length === 1
+          ? `Se publicará directamente en el Álbum del Fotógrafo Oficial (${baseCaption || 'Toma Oficial · Cobertura Gala'}).`
+          : `Se subirán en alta resolución las ${files.length} fotografías seleccionadas al Álbum Oficial.`,
+      confirmText:
+        files.length === 1 ? 'Sí, publicar' : `Sí, publicar ${files.length} fotos`,
+      variant: 'gold',
+    });
+    if (!ok) return;
+
     setUploading(true);
     setErrMsg(null);
+    let uploadedCount = 0;
+    let failedCount = 0;
+
     try {
-      const formData = new FormData();
-      formData.append('archivo', file);
-      formData.append('origen', 'FOTOGRAFO');
-      formData.append('etapa', 'GALA');
-      formData.append('pie_de_foto', caption.trim());
-      await api.uploadMedia(formData);
-      setFile(null);
-      setCaption('');
-      setShowAdminUpload(false);
-      setMsg('Fotografía oficial publicada directamente en el álbum.');
-      onRefresh();
-      setTimeout(() => setMsg(null), 4000);
-    } catch (err: any) {
-      setErrMsg(err.message || 'No se pudo publicar la fotografía oficial.');
+      for (let i = 0; i < files.length; i++) {
+        const currentFile = files[i];
+        setUploadProgress({ current: i + 1, total: files.length });
+
+        const itemCaption =
+          files.length === 1
+            ? baseCaption || 'Toma Oficial · Cobertura Gala'
+            : baseCaption
+            ? `${baseCaption} · ${String(i + 1).padStart(2, '0')}`
+            : `Toma Oficial #${String(studioPhotos.length + uploadedCount + 1).padStart(2, '0')}`;
+
+        const formData = new FormData();
+        formData.append('archivo', currentFile);
+        formData.append('origen', 'FOTOGRAFO');
+        formData.append('etapa', 'GALA');
+        formData.append('pie_de_foto', itemCaption);
+
+        try {
+          await api.uploadMedia(formData);
+          uploadedCount++;
+        } catch {
+          failedCount++;
+        }
+      }
+
+      if (uploadedCount > 0) {
+        setFiles([]);
+        setCaption('');
+        if (fileRef.current) fileRef.current.value = '';
+        setShowAdminUpload(false);
+        setMsg(
+          uploadedCount === 1
+            ? 'Fotografía oficial publicada en el álbum.'
+            : `${uploadedCount} fotografías oficiales publicadas en el álbum.`
+        );
+        onRefresh();
+        setTimeout(() => setMsg(null), 5000);
+      }
+      if (failedCount > 0) {
+        setErrMsg(
+          `No se pudieron publicar ${failedCount} fotografía(s). Verifica que pesen menos de 50 MB e intenta de nuevo.`
+        );
+      }
     } finally {
+      setUploadProgress(null);
       setUploading(false);
     }
   };
@@ -175,30 +253,76 @@ export const PhotographerSection: React.FC<PhotographerSectionProps> = ({
           onSubmit={handleUploadOfficial}
           className="p-5 rounded-2xl glass space-y-4"
         >
-          <h3 className="font-serif text-xl text-gala-ivory">
-            Publicar Fotografía del Fotógrafo Oficial
-          </h3>
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="font-serif text-xl text-gala-ivory">
+              Publicar Fotografías del Fotógrafo Oficial
+            </h3>
+            {files.length > 0 && !uploading && (
+              <button
+                type="button"
+                onClick={() => {
+                  setFiles([]);
+                  if (fileRef.current) fileRef.current.value = '';
+                }}
+                className="text-xs text-gala-muted hover:text-gala-ivory"
+              >
+                Limpiar ({files.length})
+              </button>
+            )}
+          </div>
+
           <input
             ref={fileRef}
             type="file"
             accept="image/*"
-            onChange={(e) => setFile(e.target.files?.[0] || null)}
-            className="block w-full text-xs text-gala-parchment"
+            multiple
+            onChange={handleSelectOfficialFiles}
+            className="hidden"
           />
+
+          <button
+            type="button"
+            disabled={uploading}
+            onClick={() => fileRef.current?.click()}
+            className="w-full py-6 px-4 rounded-xl border-2 border-dashed border-gala-silver/35 hover:border-gala-gold bg-gala-obsidian/70 flex flex-col items-center justify-center gap-1.5 text-center transition disabled:opacity-50"
+          >
+            <Camera className="w-6 h-6 text-gala-gold" />
+            <span className="text-xs sm:text-sm font-medium text-gala-ivory">
+              {files.length === 0
+                ? 'Toca aquí para elegir una o varias fotos HD (hasta 50 MB c/u)'
+                : files.length === 1
+                ? `1 fotografía lista: ${files[0].name}`
+                : `${files.length} fotografías seleccionadas listas para publicar`}
+            </span>
+            <span className="text-[11px] text-gala-muted">
+              Puedes seleccionar todo un álbum o sesión de una sola vez
+            </span>
+          </button>
+
           <input
             type="text"
-            required
             value={caption}
             onChange={(e) => setCaption(e.target.value)}
-            placeholder="Título o descripción de la toma oficial..."
+            placeholder={
+              files.length > 1
+                ? 'Título opcional para el lote (ej. Sesión Mesa Principal — se numerarán solas)...'
+                : 'Título opcional de la toma oficial...'
+            }
             className="w-full px-4 py-2.5 rounded-xl bg-gala-obsidian border border-gala-silver/25 text-xs text-gala-ivory"
           />
           <button
             type="submit"
-            disabled={uploading || !file}
-            className="px-5 py-2.5 rounded-xl btn-gold text-gala-obsidian font-semibold text-xs disabled:opacity-40"
+            disabled={uploading || files.length === 0}
+            className="px-5 py-2.5 rounded-xl btn-gold text-gala-obsidian font-semibold text-xs disabled:opacity-40 inline-flex items-center gap-2"
           >
-            {uploading ? 'Publicando...' : 'Publicar en Álbum Oficial'}
+            <Upload className="w-3.5 h-3.5" />
+            <span>
+              {uploading && uploadProgress
+                ? `Publicando ${uploadProgress.current} de ${uploadProgress.total}...`
+                : files.length > 1
+                ? `Publicar ${files.length} Fotos en Álbum Oficial`
+                : 'Publicar en Álbum Oficial'}
+            </span>
           </button>
         </form>
       )}

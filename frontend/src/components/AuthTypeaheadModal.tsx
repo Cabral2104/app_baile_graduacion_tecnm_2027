@@ -96,16 +96,6 @@ export const AuthTypeaheadModal: React.FC<AuthTypeaheadModalProps> = ({
     setError(null);
   };
 
-  const handleQuickDemoSelect = (targetId: string, presetPin?: string) => {
-    const found = allUsers.find((u) => u.id === targetId);
-    if (found) {
-      setSelectedUser(found);
-      setPin(presetPin || '');
-      setConfirmPin(presetPin || '');
-      setError(null);
-    }
-  };
-
   const handleSubmitPin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedUser) return;
@@ -374,45 +364,6 @@ export const AuthTypeaheadModal: React.FC<AuthTypeaheadModalProps> = ({
                       </button>
                     ))
                   )}
-                </div>
-
-                {/* Atajos de Prueba Rápida para Desarrollo */}
-                <div className="pt-3 border-t border-gala-gold/15">
-                  <p className="text-[11px] uppercase tracking-wider text-gala-muted mb-2">
-                    Accesos rápidos para prueba inmediata:
-                  </p>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => handleQuickDemoSelect('usr-maria-ind')}
-                      className="text-left p-2.5 rounded-lg bg-gala-obsidian border border-gala-gold/20 hover:border-gala-gold/50 text-xs transition"
-                    >
-                      <div className="font-medium text-gala-champagne">Alumno Homónimo</div>
-                      <div className="text-[11px] text-gala-muted truncate">
-                        María F. López (Primer ingreso)
-                      </div>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleQuickDemoSelect('usr-alejandro', '1234')}
-                      className="text-left p-2.5 rounded-lg bg-gala-obsidian border border-gala-gold/20 hover:border-gala-gold/50 text-xs transition"
-                    >
-                      <div className="font-medium text-gala-champagne">Alumno con PIN</div>
-                      <div className="text-[11px] text-gala-muted truncate">
-                        Alejandro M. (PIN: 1234)
-                      </div>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleQuickDemoSelect('usr-admin-sofia', '2026')}
-                      className="text-left p-2.5 rounded-lg bg-gala-obsidian border border-gala-gold/20 hover:border-gala-gold/50 text-xs transition"
-                    >
-                      <div className="font-medium text-gala-champagne">Organizadora Admin</div>
-                      <div className="text-[11px] text-gala-muted truncate">
-                        Sofía V. (PIN: 2026)
-                      </div>
-                    </button>
-                  </div>
                 </div>
               </>
             )}

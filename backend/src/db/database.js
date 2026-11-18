@@ -233,19 +233,35 @@ function seedInitialData() {
   }
 
   const userCount = db.prepare('SELECT COUNT(*) as total FROM User').get().total;
-  if (userCount === 0) {
-    const adminPinHash = hashPin('2026');
-    const demoStudentPinHash = hashPin('1234');
+  const seedDemoUsers = !['false', '0'].includes(
+    String(process.env.SEED_DEMO_USERS || 'true').toLowerCase()
+  );
+  const seedDemoMedia = !['false', '0'].includes(
+    String(process.env.SEED_DEMO_MEDIA || 'true').toLowerCase()
+  );
 
-    const initialUsers = [
+  if (userCount === 0) {
+    const adminPinSeed = String(process.env.ADMIN_INITIAL_PIN || '2026').trim();
+    const adminPinHash = hashPin(adminPinSeed);
+    const adminInitialName = String(
+      process.env.ADMIN_INITIAL_NAME || 'Sofía Villalobos Mondragón'
+    ).trim();
+    const demoStudentPinHash = process.env.DEMO_STUDENT_PIN
+      ? hashPin(process.env.DEMO_STUDENT_PIN)
+      : null;
+
+    const adminUsers = [
       {
         id: 'usr-admin-sofia',
-        nombre_completo: 'Sofía Villalobos Mondragón',
+        nombre_completo: adminInitialName,
         distintivo_homonimo: 'Comité Organizador · Presidencia',
         mesa: 'Mesa de Honor 01',
         pin_hash: adminPinHash,
         rol: 'ADMIN',
       },
+    ];
+
+    const demoUsers = [
       {
         id: 'usr-admin-regina',
         nombre_completo: 'Regina Montes de Oca',
@@ -335,6 +351,10 @@ function seedInitialData() {
         rol: 'ALUMNO',
       },
     ];
+
+    const initialUsers = seedDemoUsers
+      ? [...adminUsers, ...demoUsers]
+      : adminUsers;
 
     const insertUser = db.prepare(`
       INSERT INTO User (
@@ -451,19 +471,9 @@ function seedInitialData() {
     },
   ];
 
-  // Actualizar siempre el arte SVG con la paleta "La Noche Estrellada"
-  for (const item of sampleItems) {
-    ensureSampleArtworkFile(
-      item.filename,
-      item.title,
-      item.subtitle,
-      item.stageTag,
-      item.palette
-    );
-  }
-
   const mediaCount = db.prepare('SELECT COUNT(*) as total FROM MediaItem').get().total;
-  if (mediaCount === 0) {
+  if (mediaCount === 0 && seedDemoMedia) {
+    // Generar las 6 obras SVG semilla con la paleta "La Noche Estrellada"
     const insertMedia = db.prepare(`
       INSERT INTO MediaItem (
         id, usuario_id, origen, etapa, pie_de_foto, estado, tipo_medio,

@@ -33,8 +33,6 @@ import {
   FolderArchive,
   Camera,
   Shield,
-  Video,
-  Globe,
 } from 'lucide-react';
 import {
   AdminOverviewResponse,
@@ -103,13 +101,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [newGuestMesa, setNewGuestMesa] = useState('');
   const [newGuestRole, setNewGuestRole] = useState<'ALUMNO' | 'ADMIN'>('ALUMNO');
   const [excelBulkText, setExcelBulkText] = useState('');
-
-  // Identidad del Evento y Video Conmemorativo Final
-  const [cfgTitulo, setCfgTitulo] = useState('');
-  const [cfgGeneracion, setCfgGeneracion] = useState('');
-  const [cfgSubtitulo, setCfgSubtitulo] = useState('');
-  const [cfgVideoUrl, setCfgVideoUrl] = useState('');
-  const [savingConfig, setSavingConfig] = useState(false);
+  const [batchModerating, setBatchModerating] = useState(false);
 
   // Filtro de elementos multimedia según la pestaña de estado activa (Pendientes, Aprobadas Video, Aprobadas Fiesta, etc.)
   const currentStatusMedia = React.useMemo(() => {
@@ -155,10 +147,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       const res = await api.getAdminOverview();
       setData(res);
       setStoryboard(res.storyboard);
-      setCfgTitulo(res.config.titulo_evento || '');
-      setCfgGeneracion(res.config.nombre_generacion || '');
-      setCfgSubtitulo(res.config.subtitulo_evento || '');
-      setCfgVideoUrl(res.config.url_video_oficial || '');
     } catch (err: any) {
       showToast(err.message || 'Error al cargar el panel administrativo.');
     } finally {
@@ -272,6 +260,39 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       onConfigChanged();
     } catch (err: any) {
       showToast(err.message || 'Error al moderar el elemento.');
+    }
+  };
+
+  const handleBatchApprovePending = async (pendingItems: AdminOverviewResponse['mediaItems']) => {
+    if (pendingItems.length === 0) return;
+
+    const memCount = pendingItems.filter((i) => i.origen === 'PRE_EVENTO').length;
+    const partyCount = pendingItems.length - memCount;
+    const parts: string[] = [];
+    if (memCount > 0) parts.push(`${memCount} a Modo Memoria (Video)`);
+    if (partyCount > 0) parts.push(`${partyCount} a Día de la Fiesta`);
+
+    const ok = await confirm({
+      title: `¿Aprobar ${pendingItems.length} archivo(s) pendientes?`,
+      description: `Se publicarán automáticamente según el apartado desde donde se subieron: ${parts.join(' y ')}.`,
+      confirmText: `Sí, aprobar (${pendingItems.length})`,
+      variant: 'gold',
+    });
+    if (!ok) return;
+
+    setBatchModerating(true);
+    try {
+      const res = await api.moderateMediaBatch(
+        pendingItems.map((i) => i.id),
+        'BY_ORIGIN'
+      );
+      showToast(res.message);
+      await fetchOverview();
+      onConfigChanged();
+    } catch (err: any) {
+      showToast(err.message || 'Error al aprobar el lote pendiente.');
+    } finally {
+      setBatchModerating(false);
     }
   };
 
@@ -477,32 +498,38 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       .filter(Boolean);
     if (lines.length === 0) return;
 
-    const batch = lines.map((line) => {
-      const parts = line.includes('\t') ? line.split('\t') : line.split(',');
-      return {
-        nombre_completo: (parts[0] || '').trim(),
-        distintivo_homonimo: (parts[1] || 'Graduado').trim(),
-        mesa: (parts[2] || 'Mesa General').trim(),
-        rol: 'ALUMNO' as const,
-      };
+    const batch = lines
+      .map((line) => {
+        const parts = line.includes('\t') ? line.split('\t') : line.split(',');
+        return {
+          nombre_completo: (parts[0] || '').trim(),
+          distintivo_homonimo: (parts[1] || 'Graduado').trim(),
+          mesa: (parts[2] || 'Mesa General').trim(),
+          rol: 'ALUMNO' as const,
+        };
+      })
+      .filter((entry) => entry.nombre_completo.length > 0);
+
+    if (batch.length === 0) {
+      showToast('No se detectaron nombres válidos en el texto pegado.');
+      return;
+    }
+
+    const ok = await confirm({
+      title: '¿Importar lista de invitados?',
+      description: `Se agregarán ${batch.length} registro(s) al padrón oficial desde la lista pegada.`,
+      confirmText: `Sí, importar (${batch.length})`,
+      variant: 'gold',
     });
+    if (!ok) return;
 
     try {
-      const token = localStorage.getItem('gala_graduacion_jwt_token_v1');
-      const res = await fetch('/api/admin/users', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({ batch }),
-      });
-      const json = await res.json();
+      const json = await api.createUsersBatch(batch);
       setExcelBulkText('');
       showToast(json.message || 'Lista de Excel importada correctamente.');
       await fetchOverview();
-    } catch {
-      showToast('Error al importar la lista.');
+    } catch (err: any) {
+      showToast(err.message || 'Error al importar la lista.');
     }
   };
 
@@ -557,45 +584,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       onConfigChanged();
     } catch (err: any) {
       showToast(err.message || 'Error al actualizar la moderación de la fiesta.');
-    }
-  };
-
-  const handleSaveEventIdentity = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const nextTitulo = cfgTitulo.trim();
-    const nextGen = cfgGeneracion.trim();
-    const nextSub = cfgSubtitulo.trim();
-    const rawVideo = cfgVideoUrl.trim();
-    if (!nextTitulo || !nextGen) {
-      showToast('El título del evento y la generación son obligatorios.');
-      return;
-    }
-
-    const ok = await confirm({
-      title: '¿Guardar identidad y video oficial?',
-      description: `Todos los invitados verán "${nextTitulo}" · "${nextGen}"${
-        rawVideo ? ' junto al enlace del Video Oficial Completo en Modo Memoria' : ''
-      }.`,
-      confirmText: 'Sí, guardar cambios',
-      variant: 'gold',
-    });
-    if (!ok) return;
-
-    setSavingConfig(true);
-    try {
-      const res = await api.updateConfig({
-        titulo_evento: nextTitulo,
-        nombre_generacion: nextGen,
-        subtitulo_evento: nextSub,
-        url_video_oficial: rawVideo,
-      });
-      showToast(res.message);
-      await fetchOverview();
-      onConfigChanged();
-    } catch (err: any) {
-      showToast(err.message || 'Error al guardar los datos del evento.');
-    } finally {
-      setSavingConfig(false);
     }
   };
 
@@ -944,7 +932,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               )}
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <select
                 value={mediaMesaFilter}
                 onChange={(e) => {
@@ -975,6 +963,29 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <RotateCcw className="w-3.5 h-3.5 text-gala-gold" />
                 </button>
               )}
+
+              {(() => {
+                const pendingVisible = filteredMedia.filter(
+                  (item) => item.estado === 'PENDIENTE'
+                );
+                if (pendingVisible.length === 0) return null;
+                return (
+                  <button
+                    type="button"
+                    disabled={batchModerating}
+                    onClick={() => handleBatchApprovePending(pendingVisible)}
+                    className="px-3.5 py-2 rounded-xl btn-gold text-gala-obsidian font-semibold text-xs flex items-center gap-1.5 shadow transition disabled:opacity-50"
+                    title="Aprobar juntas todas las fotos pendientes mostradas según su apartado"
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>
+                      {batchModerating
+                        ? 'Aprobando...'
+                        : `Aprobar pendientes (${pendingVisible.length})`}
+                    </span>
+                  </button>
+                );
+              })()}
             </div>
           </div>
 
@@ -1633,96 +1644,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </button>
             </div>
           </div>
-
-          {/* Identidad del Evento y Video Conmemorativo Final */}
-          <form
-            onSubmit={handleSaveEventIdentity}
-            className="pt-6 border-t border-gala-silver/15 space-y-4"
-          >
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-              <div>
-                <h3 className="font-serif text-xl text-gala-ivory flex items-center gap-2">
-                  <Globe className="w-4 h-4 text-gala-gold shrink-0" />
-                  <span>Identidad del Evento y Video Conmemorativo Final</span>
-                </h3>
-                <p className="text-xs text-gala-parchment/80 mt-0.5">
-                  Personaliza los títulos visibles en la portada, el encabezado y el enlace al video oficial terminado (YouTube, Drive o Vimeo).
-                </p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-              <div className="space-y-1">
-                <label className="text-[11px] font-medium text-gala-silver/90">
-                  Título del Evento
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={cfgTitulo}
-                  onChange={(e) => setCfgTitulo(e.target.value)}
-                  placeholder="Ej. Graduación TECNM"
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-gala-obsidian border border-gala-silver/30 text-xs text-gala-ivory focus:border-gala-gold/60 outline-none"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-[11px] font-medium text-gala-silver/90">
-                  Generación
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={cfgGeneracion}
-                  onChange={(e) => setCfgGeneracion(e.target.value)}
-                  placeholder="Ej. Generación 2022 – 2026"
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-gala-obsidian border border-gala-silver/30 text-xs text-gala-ivory focus:border-gala-gold/60 outline-none"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-[11px] font-medium text-gala-silver/90">
-                  Subtítulo / Institución
-                </label>
-                <input
-                  type="text"
-                  value={cfgSubtitulo}
-                  onChange={(e) => setCfgSubtitulo(e.target.value)}
-                  placeholder="Ej. Tecnológico Nacional de México"
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-gala-obsidian border border-gala-silver/30 text-xs text-gala-ivory focus:border-gala-gold/60 outline-none"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-[11px] font-medium text-gala-silver/90 flex items-center gap-1.5">
-                  <Video className="w-3.5 h-3.5 text-gala-gold" />
-                  <span>Enlace del Video Oficial (opcional)</span>
-                </label>
-                <input
-                  type="text"
-                  value={cfgVideoUrl}
-                  onChange={(e) => setCfgVideoUrl(e.target.value)}
-                  placeholder="https://youtu.be/... o https://drive.google.com/..."
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-gala-obsidian border border-gala-silver/30 text-xs text-gala-ivory focus:border-gala-gold/60 outline-none"
-                />
-              </div>
-            </div>
-
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <p className="text-[11px] text-gala-muted">
-                Si dejas un enlace guardado aquí, aparecerá el botón dorado{' '}
-                <strong className="text-gala-champagne">Ver Video Oficial Completo</strong> en Modo Memoria. Déjalo vacío para ocultarlo.
-              </p>
-              <button
-                type="submit"
-                disabled={savingConfig}
-                className="px-5 py-2.5 rounded-xl btn-gold text-gala-obsidian font-semibold text-xs inline-flex items-center justify-center gap-1.5 shrink-0 disabled:opacity-50"
-              >
-                <Check className="w-4 h-4" />
-                <span>{savingConfig ? 'Guardando...' : 'Guardar Datos del Evento'}</span>
-              </button>
-            </div>
-          </form>
 
           {/* Exportación Completa Post-Evento (ZIPs por Categoría) y Respaldo de Base de Datos */}
           <div className="pt-6 border-t border-gala-silver/15 space-y-3">
