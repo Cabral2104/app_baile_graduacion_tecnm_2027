@@ -361,11 +361,12 @@ export const LiveWallScreen: React.FC<LiveWallScreenProps> = ({ onExit }) => {
               <ArrowLeft className="w-4 h-4 text-gala-gold" /> Volver
             </button>
             <div className="min-w-0">
-              <div className="text-[10px] sm:text-[11px] uppercase tracking-[0.2em] text-gala-gold flex items-center gap-1.5 truncate">
+              <div className="text-[10px] sm:text-[11px] uppercase tracking-[0.14em] sm:tracking-[0.2em] text-gala-gold flex items-center gap-1.5 truncate">
                 <Sparkles className="w-3 h-3 text-gala-silver shrink-0" />
-                <span>Proyector en Vivo · Donde termina el aula y comienza nuestra historia</span>
+                <span className="sm:hidden">Proyector en Vivo</span>
+                <span className="hidden sm:inline">Proyector en Vivo · Donde termina el aula y comienza nuestra historia</span>
               </div>
-              <h1 className="font-display font-semibold text-base sm:text-xl text-gala-ivory truncate">
+              <h1 className="font-display font-semibold text-[clamp(12px,3.6vw,20px)] text-gala-ivory truncate">
                 {config?.titulo_evento || 'Graduación TECNM'}
               </h1>
             </div>

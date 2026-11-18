@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('node:path');
+const fs = require('node:fs');
 const { db, STORAGE_UPLOADS_DIR } = require('./db/database');
 const { authRouter } = require('./routes/auth');
 const { mediaRouter } = require('./routes/media');
@@ -9,12 +10,16 @@ const { addClient, getConnectedCount } = require('./realtime/liveHub');
 
 const app = express();
 const PORT = process.env.PORT || 4000;
+const HOST = process.env.HOST || '0.0.0.0';
+const FRONTEND_DIST_DIR = path.resolve(__dirname, '../../frontend/dist');
+
+app.set('trust proxy', 1);
 
 app.use(
   cors({
     origin: '*',
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Visitor-Id'],
   })
 );
 
@@ -52,6 +57,7 @@ app.get('/api/live/stream', (req, res) => {
     'Cache-Control': 'no-cache, no-transform',
     Connection: 'keep-alive',
     'Access-Control-Allow-Origin': '*',
+    'X-Accel-Buffering': 'no',
   });
 
   res.write(`event: CONNECTED\ndata: ${JSON.stringify({ connectedAt: new Date().toISOString() })}\n\n`);
@@ -75,6 +81,17 @@ app.use('/api/auth', authRouter);
 app.use('/api/media', mediaRouter);
 app.use('/api/admin', adminRouter);
 
+// En producción / hosting: servir el frontend compilado (frontend/dist) desde un único servidor
+if (fs.existsSync(path.join(FRONTEND_DIST_DIR, 'index.html'))) {
+  app.use(express.static(FRONTEND_DIST_DIR));
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api') || req.path.startsWith('/uploads')) {
+      return next();
+    }
+    return res.sendFile(path.join(FRONTEND_DIST_DIR, 'index.html'));
+  });
+}
+
 // Manejador de errores global (incluye límites de tamaño de Multer)
 app.use((err, _req, res, _next) => {
   if (err && err.code === 'LIMIT_FILE_SIZE') {
@@ -88,10 +105,10 @@ app.use((err, _req, res, _next) => {
   });
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, HOST, () => {
   console.log(`====================================================================`);
   console.log(`  GALA DE GRADUACION UNIVERSITARIA - BACKEND API & REALTIME SERVER  `);
-  console.log(`  Servidor activo en: http://localhost:${PORT}                      `);
+  console.log(`  Servidor activo en: http://${HOST}:${PORT}                        `);
   console.log(`  Almacenamiento en:  ${STORAGE_UPLOADS_DIR}                        `);
   console.log(`====================================================================`);
 });

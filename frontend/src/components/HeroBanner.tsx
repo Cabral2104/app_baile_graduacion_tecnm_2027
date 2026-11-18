@@ -12,6 +12,9 @@ export interface PhaseCopy {
 interface HeroBannerProps {
   phase: PhaseCopy;
   firstName?: string;
+  titulo?: string;
+  generacion?: string;
+  subtitulo?: string;
   /** Versión reducida para evitar saturar antes de ver las fotografías */
   compact?: boolean;
   /** Permite expandir/contraer manualmente la portada monumental */
@@ -20,15 +23,6 @@ interface HeroBannerProps {
   showCta: boolean;
   onCta: () => void;
 }
-
-const MARQUEE_ITEMS = [
-  { text: 'Graduación TECNM', accent: 'gold' },
-  { text: 'Generación 2022 – 2026', accent: 'silver' },
-  { text: 'Donde termina el aula y comienza nuestra historia', accent: 'gold' },
-  { text: 'Tecnológico Nacional de México', accent: 'silver' },
-  { text: 'El inicio de nuestra historia', accent: 'gold' },
-  { text: 'Recuerdos para Siempre', accent: 'silver' },
-] as const;
 
 /** Letras que entran una por una con brillo estelar */
 const AnimatedWord: React.FC<{
@@ -104,10 +98,23 @@ export const Seal: React.FC<{ className?: string }> = ({ className = '' }) => (
  * Carrusel continuo (Ticker) que avanza suavemente de derecha a izquierda
  * con desvanecimiento lateral para que el texto nunca se vea cortado.
  */
-const StarryMarqueeCarousel: React.FC = () => {
+const StarryMarqueeCarousel: React.FC<{
+  titulo: string;
+  generacion: string;
+  subtitulo: string;
+}> = ({ titulo, generacion, subtitulo }) => {
+  const items = [
+    { text: titulo, accent: 'gold' as const },
+    { text: generacion, accent: 'silver' as const },
+    { text: 'Donde termina el aula y comienza nuestra historia', accent: 'gold' as const },
+    { text: subtitulo, accent: 'silver' as const },
+    { text: 'El inicio de nuestra historia', accent: 'gold' as const },
+    { text: 'Recuerdos para Siempre', accent: 'silver' as const },
+  ];
+
   const renderSet = (setKey: string) => (
     <div key={setKey} className="flex items-center shrink-0">
-      {MARQUEE_ITEMS.map((item, idx) => (
+      {items.map((item, idx) => (
         <div
           key={`${setKey}-${idx}`}
           className="flex items-center shrink-0"
@@ -142,12 +149,21 @@ const StarryMarqueeCarousel: React.FC = () => {
 export const HeroBanner: React.FC<HeroBannerProps> = ({
   phase,
   firstName,
+  titulo = 'Graduación TECNM',
+  generacion = 'Generación 2022 – 2026',
+  subtitulo = 'Tecnológico Nacional de México',
   compact = false,
   onToggleCompact,
   canExpand = false,
   showCta,
   onCta,
 }) => {
+  const resolvedTitulo = titulo.trim() || 'Graduación TECNM';
+  const resolvedGeneracion = generacion.trim() || 'Generación 2022 – 2026';
+  const resolvedSubtitulo = subtitulo.trim() || 'Tecnológico Nacional de México';
+  const tituloWords = resolvedTitulo.split(/\s+/);
+  const titleTop = tituloWords.length >= 2 ? tituloWords.slice(0, -1).join(' ').toUpperCase() : '';
+  const titleAccent = tituloWords[tituloWords.length - 1].toUpperCase();
   if (compact) {
     return (
       <motion.section
@@ -235,20 +251,24 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({
           <Seal className="relative w-24 h-24 sm:w-32 sm:h-32 mb-4" />
 
           <motion.p
-            initial={{ opacity: 0, letterSpacing: '0.45em' }}
-            animate={{ opacity: 1, letterSpacing: '0.28em' }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
             transition={{ duration: 0.9, delay: 0.1 }}
-            className="relative font-display text-[10px] sm:text-xs uppercase text-gala-silver"
+            className="relative font-display text-[clamp(9px,2.5vw,12px)] tracking-[0.14em] sm:tracking-[0.26em] uppercase text-gala-silver px-2"
           >
-            Tecnológico Nacional de México
+            {resolvedSubtitulo}
           </motion.p>
 
           <h2 className="relative font-display font-bold leading-[0.96] mt-2 text-[clamp(2rem,8.2vw,4.6rem)] tracking-[0.04em] text-gala-ivory">
-            <AnimatedWord text="GRADUACIÓN" delay={0.15} />
-            <br />
+            {titleTop ? (
+              <>
+                <AnimatedWord text={titleTop} delay={0.15} />
+                <br />
+              </>
+            ) : null}
             <AnimatedWord
-              text="TECNM"
-              delay={0.55}
+              text={titleAccent}
+              delay={titleTop ? 0.55 : 0.15}
               className="text-shimmer text-[clamp(3rem,14vw,7.5rem)] tracking-[0.08em]"
             />
           </h2>
@@ -260,7 +280,7 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({
             transition={{ delay: 0.9 }}
             className="relative font-serif italic text-xl sm:text-2xl text-gala-silver mt-2"
           >
-            Generación 2022 – 2026
+            {resolvedGeneracion}
           </motion.p>
 
           {/* Mensaje según la fase del evento */}
@@ -296,7 +316,11 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({
         </div>
 
         {/* Carrusel animado continuo en la parte inferior */}
-        <StarryMarqueeCarousel />
+        <StarryMarqueeCarousel
+          titulo={resolvedTitulo}
+          generacion={resolvedGeneracion}
+          subtitulo={resolvedSubtitulo}
+        />
       </div>
     </motion.section>
   );

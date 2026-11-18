@@ -145,6 +145,14 @@ export const App: React.FC = () => {
     localStorage.removeItem('gala_livewall_offline_cache_v1');
   }, []);
 
+  useEffect(() => {
+    if (!config) return;
+    const parts = [config.titulo_evento, config.nombre_generacion].filter(Boolean);
+    if (parts.length > 0) {
+      document.title = parts.join(' · ');
+    }
+  }, [config?.titulo_evento, config?.nombre_generacion]);
+
   const fetchPublicState = useCallback(async () => {
     try {
       const res = await api.getPublicMediaAndConfig();
@@ -245,11 +253,11 @@ export const App: React.FC = () => {
             prev.map((item) =>
               item.id === payload.media_id
                 ? {
-                    ...item,
-                    reacciones_corazon: payload.counts.corazon,
-                    reacciones_estrella: payload.counts.estrella,
-                    reacciones_total: payload.counts.total,
-                  }
+                  ...item,
+                  reacciones_corazon: payload.counts.corazon,
+                  reacciones_estrella: payload.counts.estrella,
+                  reacciones_total: payload.counts.total,
+                }
                 : item
             )
           );
@@ -336,8 +344,8 @@ export const App: React.FC = () => {
 
       {/* ENCABEZADO LIMPIO Y COMPACTO */}
       <header className="sticky top-0 z-30 glass !rounded-none !border-x-0 !border-t-0">
-        <div className="max-w-6xl mx-auto px-3.5 sm:px-6 h-16 sm:h-[70px] flex items-center justify-between gap-2.5 sm:gap-3">
-          <div className="flex items-center gap-2.5 min-w-0">
+        <div className="max-w-6xl mx-auto px-2.5 sm:px-6 h-14 sm:h-[70px] flex items-center justify-between gap-1.5 sm:gap-3">
+          <div className="flex items-center gap-2 sm:gap-2.5 min-w-0 flex-1 md:flex-initial">
             <button
               type="button"
               onClick={() =>
@@ -345,23 +353,35 @@ export const App: React.FC = () => {
                   config?.fase_actual === 'EN_VIVO' ? 'DIA_DE_LA_FIESTA' : 'MODO_MEMORIA'
                 )
               }
-              className="flex items-center gap-2.5 sm:gap-3 min-w-0 text-left"
+              className="flex items-center gap-2 sm:gap-3 min-w-0 text-left"
               aria-label="Ir al inicio"
             >
-              <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl btn-gold flex items-center justify-center shrink-0">
-                <GraduationCap className="w-5 h-5" />
+              <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl btn-gold flex items-center justify-center shrink-0">
+                <GraduationCap className="w-4 h-4 sm:w-5 sm:h-5" />
               </div>
               <div className="min-w-0">
-                <div className="text-[9.5px] sm:text-[10px] uppercase tracking-[0.16em] sm:tracking-[0.22em] text-gala-silver/85 font-semibold truncate">
-                  Generación 2022 – 2026
+                <div className="text-[clamp(8px,2.15vw,10px)] uppercase tracking-[clamp(0.04em,0.3vw,0.22em)] text-gala-silver/85 font-semibold leading-tight truncate">
+                  {config?.nombre_generacion || 'Generación 2022 – 2026'}
                 </div>
-                <h1 className="font-display font-bold text-sm sm:text-xl leading-tight text-gala-ivory truncate">
-                  Graduación <span className="text-shimmer">TECNM</span>
+                <h1 className="font-display font-bold text-[clamp(11px,3.15vw,20px)] tracking-[clamp(-0.015em,0.08vw,0.02em)] leading-tight text-gala-ivory truncate">
+                  {(() => {
+                    const titulo = (config?.titulo_evento || 'Graduación TECNM').trim();
+                    const words = titulo.split(/\s+/);
+                    if (words.length >= 2) {
+                      return (
+                        <>
+                          {words.slice(0, -1).join(' ')}{' '}
+                          <span className="text-shimmer">{words[words.length - 1]}</span>
+                        </>
+                      );
+                    }
+                    return <span className="text-shimmer">{titulo}</span>;
+                  })()}
                 </h1>
               </div>
             </button>
 
-            {/* Píldora integrada de Mesa QR (ahorra el banner superior completo) */}
+            {/* Píldora integrada de Mesa QR (escritorio / tablet) */}
             {scannedMesa && (
               <div className="hidden sm:inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-full bg-gala-gold/15 border border-gala-gold/40 text-[11px] text-gala-champagne shrink-0">
                 <QrCode className="w-3.5 h-3.5 text-gala-gold" />
@@ -403,9 +423,8 @@ export const App: React.FC = () => {
                   key={tab.id}
                   type="button"
                   onClick={() => navigateView(tab.id)}
-                  className={`relative px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 ${
-                    active ? 'text-gala-obsidian' : 'text-gala-silver hover:text-gala-ivory'
-                  }`}
+                  className={`relative px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 ${active ? 'text-gala-obsidian' : 'text-gala-silver hover:text-gala-ivory'
+                    }`}
                 >
                   {active && (
                     <motion.span
@@ -417,11 +436,10 @@ export const App: React.FC = () => {
                   <Icon className="w-3.5 h-3.5 relative z-10" />
                   <span className="relative z-10">{tab.label}</span>
                   <span
-                    className={`relative z-10 min-w-[20px] px-1.5 py-0.5 rounded-full text-[10px] font-mono tabular-nums text-center ${
-                      active
+                    className={`relative z-10 min-w-[20px] px-1.5 py-0.5 rounded-full text-[10px] font-mono tabular-nums text-center ${active
                         ? 'bg-gala-obsidian/15'
                         : 'bg-gala-gold/15 text-gala-champagne'
-                    }`}
+                      }`}
                   >
                     {counts[tab.id]}
                   </span>
@@ -430,48 +448,39 @@ export const App: React.FC = () => {
             })}
           </nav>
 
-          {/* Controles derechos: Mesa móvil, Comité discreto, Estrellas, Sesión */}
-          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-            {scannedMesa && (
-              <div className="sm:hidden inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-gala-gold/15 border border-gala-gold/40 text-[10px] font-semibold text-gala-champagne">
-                <QrCode className="w-3 h-3 text-gala-gold" />
-                <span className="max-w-[58px] truncate">{scannedMesa}</span>
-              </div>
-            )}
-
+          {/* Controles derechos: Comité discreto, Estrellas, Sesión */}
+          <div className="flex items-center gap-1 sm:gap-2 shrink-0">
             <button
               type="button"
               onClick={() => navigateView('ADMIN')}
-              className={`p-2 sm:px-2.5 sm:py-2 rounded-xl border flex items-center gap-1.5 text-xs font-semibold transition ${
-                activeView === 'ADMIN'
+              className={`p-1.5 sm:px-2.5 sm:py-2 rounded-lg sm:rounded-xl border flex items-center gap-1.5 text-xs font-semibold transition ${activeView === 'ADMIN'
                   ? 'btn-gold border-gala-gold text-gala-obsidian'
                   : isAdminUser
-                  ? 'bg-gala-gold/15 border-gala-gold/45 text-gala-champagne hover:bg-gala-gold/25'
-                  : 'bg-gala-obsidian/50 border-gala-silver/20 text-gala-muted hover:text-gala-ivory hover:border-gala-silver/40'
-              }`}
+                    ? 'bg-gala-gold/15 border-gala-gold/45 text-gala-champagne hover:bg-gala-gold/25'
+                    : 'bg-gala-obsidian/50 border-gala-silver/20 text-gala-muted hover:text-gala-ivory hover:border-gala-silver/40'
+                }`}
               title="Panel de Organizadoras / Comité"
               aria-label="Panel de Organizadoras"
             >
-              <ShieldCheck className="w-4 h-4" />
+              <ShieldCheck className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               {isAdminUser && <span className="hidden lg:inline">Comité</span>}
             </button>
 
             <button
               type="button"
               onClick={() => setAmbientLeaves((prev) => !prev)}
-              className={`p-2 sm:p-2.5 rounded-xl border transition ${
-                ambientLeaves
+              className={`p-1.5 sm:p-2.5 rounded-lg sm:rounded-xl border transition ${ambientLeaves
                   ? 'bg-gala-gold/15 border-gala-gold/40 text-gala-champagne'
                   : 'bg-gala-velvet border-gala-silver/20 text-gala-muted'
-              }`}
+                }`}
               title={ambientLeaves ? 'Apagar estrellas animadas' : 'Encender estrellas animadas'}
               aria-label="Encender o apagar cielo estrellado"
             >
-              <Sparkles className="w-4 h-4" />
+              <Sparkles className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             </button>
 
             {user ? (
-              <div className="flex items-center gap-1 bg-gala-obsidian/65 pl-2.5 sm:pl-3 pr-1 py-1 rounded-xl border border-gala-gold/25">
+              <div className="flex items-center gap-0.5 sm:gap-1 bg-gala-obsidian/65 p-0.5 sm:pl-3 sm:pr-1 sm:py-1 rounded-xl border border-gala-gold/25">
                 <div className="text-right hidden sm:block leading-tight mr-1">
                   <div className="text-xs font-semibold text-gala-ivory">{firstName}</div>
                   <div className="text-[10px] text-gala-gold">
@@ -481,14 +490,14 @@ export const App: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setAuthModalOpen(true)}
-                  className="px-2 py-1.5 rounded-lg bg-gala-surface hover:bg-gala-card text-[11px] text-gala-champagne border border-gala-gold/20"
+                  className="px-2 py-1 sm:py-1.5 rounded-lg bg-gala-surface hover:bg-gala-card text-[10.5px] sm:text-[11px] text-gala-champagne border border-gala-gold/20"
                 >
                   Cambiar
                 </button>
                 <button
                   type="button"
                   onClick={handleLogout}
-                  className="p-1.5 rounded-lg text-gala-muted hover:text-gala-rose"
+                  className="p-1 sm:p-1.5 rounded-lg text-gala-muted hover:text-gala-rose"
                   title="Salir"
                   aria-label="Cerrar sesión"
                 >
@@ -499,7 +508,7 @@ export const App: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setAuthModalOpen(true)}
-                className="btn-gold px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl font-semibold text-xs flex items-center gap-1.5 animate-glow-pulse"
+                className="btn-gold px-2.5 sm:px-4 py-1.5 sm:py-2.5 rounded-lg sm:rounded-xl font-semibold text-[11px] sm:text-xs flex items-center gap-1 sm:gap-1.5 animate-glow-pulse"
               >
                 <UserCheck className="w-3.5 h-3.5" />
                 <span>Entrar</span>
@@ -507,17 +516,48 @@ export const App: React.FC = () => {
             )}
           </div>
         </div>
+
+        {/* Sub-franja compacta de Mesa QR solo en móvil para no restar espacio al título */}
+        {scannedMesa && (
+          <div className="sm:hidden border-t border-gala-silver/10 bg-gala-obsidian/45 px-3 py-1 flex items-center justify-between text-[10.5px] text-gala-champagne">
+            <span className="inline-flex items-center gap-1.5 font-medium truncate">
+              <QrCode className="w-3 h-3 text-gala-gold shrink-0" />
+              <span>Mesa vinculada por QR: {scannedMesa}</span>
+            </span>
+            <button
+              type="button"
+              onClick={async () => {
+                const ok = await confirm({
+                  title: '¿Desvincular mesa?',
+                  description: `Dejarás de estar vinculado a ${scannedMesa}. Puedes volver a escanear el código QR de tu mesa en cualquier momento.`,
+                  confirmText: 'Sí, desvincular',
+                  variant: 'warning',
+                });
+                if (!ok) return;
+                setScannedMesa(null);
+                localStorage.removeItem('gala_guest_mesa');
+                localStorage.removeItem('gala_qr_scanned');
+              }}
+              className="text-[10px] text-gala-silver/85 hover:text-gala-ivory inline-flex items-center gap-0.5 shrink-0 ml-2"
+            >
+              <span>Desvincular</span>
+              <X className="w-3 h-3" />
+            </button>
+          </div>
+        )}
       </header>
 
       <main className="relative z-20 flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 pt-4 sm:pt-6">
         {/* BIENVENIDA: compacta cuando navegas o en la fiesta, monumental expandible en Memorias */}
         {activeView !== 'ADMIN' && (
           <HeroBanner
-            key={`${
-              activeView === 'MODO_MEMORIA' && !heroCollapsed ? 'full' : 'compact'
-            }-${config?.fase_actual}`}
+            key={`${activeView === 'MODO_MEMORIA' && !heroCollapsed ? 'full' : 'compact'
+              }-${config?.fase_actual}`}
             phase={phase}
             firstName={firstName}
+            titulo={config?.titulo_evento}
+            generacion={config?.nombre_generacion}
+            subtitulo={config?.subtitulo_evento}
             compact={activeView !== 'MODO_MEMORIA' || heroCollapsed}
             canExpand={activeView === 'MODO_MEMORIA'}
             onToggleCompact={toggleHeroCollapsed}
@@ -568,7 +608,11 @@ export const App: React.FC = () => {
 
             {activeView === 'ADMIN' &&
               (user?.rol === 'ADMIN' ? (
-                <AdminDashboard onConfigChanged={fetchPublicState} />
+                <AdminDashboard
+                  onConfigChanged={fetchPublicState}
+                  onOpenLiveScreen={() => navigateView('CARRUSEL_PANTALLA_GRANDE')}
+                  currentUserId={user.id}
+                />
               ) : (
                 <div className="max-w-md mx-auto py-12 text-center space-y-4 glass glass-ornate rounded-3xl p-8">
                   <div className="w-14 h-14 mx-auto rounded-2xl btn-gold flex items-center justify-center animate-float">
@@ -595,9 +639,8 @@ export const App: React.FC = () => {
 
       {/* NAVEGACIÓN INFERIOR PARA CELULAR: Enfocada en Invitados + Botón Subir */}
       <nav
-        className={`md:hidden fixed bottom-3 inset-x-3 z-40 glass rounded-2xl grid ${
-          canQuickUpload ? 'grid-cols-4' : 'grid-cols-3'
-        } gap-1 p-1.5 shadow-2xl`}
+        className={`md:hidden fixed bottom-3 inset-x-3 z-40 glass rounded-2xl grid ${canQuickUpload ? 'grid-cols-4' : 'grid-cols-3'
+          } gap-1 p-1.5 shadow-2xl`}
         aria-label="Apartados"
       >
         {GUEST_TABS.slice(0, 2).map((tab) => {
@@ -608,9 +651,8 @@ export const App: React.FC = () => {
               key={tab.id}
               type="button"
               onClick={() => navigateView(tab.id)}
-              className={`relative py-2 rounded-xl flex flex-col items-center justify-center gap-0.5 text-[10px] font-semibold ${
-                active ? 'text-gala-obsidian' : 'text-gala-silver/85'
-              }`}
+              className={`relative py-2 rounded-xl flex flex-col items-center justify-center gap-0.5 text-[10px] font-semibold ${active ? 'text-gala-obsidian' : 'text-gala-silver/85'
+                }`}
             >
               {active && (
                 <motion.span
@@ -648,9 +690,8 @@ export const App: React.FC = () => {
               key={tab.id}
               type="button"
               onClick={() => navigateView(tab.id)}
-              className={`relative py-2 rounded-xl flex flex-col items-center justify-center gap-0.5 text-[10px] font-semibold ${
-                active ? 'text-gala-obsidian' : 'text-gala-silver/85'
-              }`}
+              className={`relative py-2 rounded-xl flex flex-col items-center justify-center gap-0.5 text-[10px] font-semibold ${active ? 'text-gala-obsidian' : 'text-gala-silver/85'
+                }`}
             >
               {active && (
                 <motion.span

@@ -538,6 +538,12 @@ router.patch('/users/:id', requireAdmin, (req, res) => {
   const nextRol =
     req.body.rol === 'ADMIN' || req.body.rol === 'ALUMNO' ? req.body.rol : existing.rol;
 
+  if (id === req.user.id && nextRol !== 'ADMIN') {
+    return res.status(400).json({
+      error: 'No puedes retirar tus propios permisos de organizadora mientras tienes sesión activa.',
+    });
+  }
+
   const now = new Date().toISOString();
   db.prepare(`
     UPDATE User
@@ -596,6 +602,7 @@ router.patch('/config', requireAdmin, (req, res) => {
     url_video_oficial,
     nombre_generacion,
     titulo_evento,
+    subtitulo_evento,
   } = req.body || {};
 
   const nextFase = ['PRE_EVENTO', 'EN_VIVO', 'MEMORIA'].includes(fase_actual)
@@ -631,6 +638,7 @@ router.patch('/config', requireAdmin, (req, res) => {
       url_video_oficial = COALESCE(?, url_video_oficial),
       nombre_generacion = COALESCE(?, nombre_generacion),
       titulo_evento = COALESCE(?, titulo_evento),
+      subtitulo_evento = COALESCE(?, subtitulo_evento),
       updated_at = ?
     WHERE id = 1
   `).run(
@@ -641,6 +649,7 @@ router.patch('/config', requireAdmin, (req, res) => {
     url_video_oficial !== undefined ? url_video_oficial : null,
     nombre_generacion || null,
     titulo_evento || null,
+    subtitulo_evento !== undefined ? subtitulo_evento : null,
     now
   );
 
@@ -653,8 +662,23 @@ router.patch('/config', requireAdmin, (req, res) => {
 
   broadcastEvent('CONFIG_UPDATED', { config: normalizedConfig });
 
+  const hasIdentityUpdate =
+    titulo_evento !== undefined ||
+    nombre_generacion !== undefined ||
+    subtitulo_evento !== undefined ||
+    url_video_oficial !== undefined;
+
+  let responseMessage = `Fase del sistema actualizada a ${nextFase}`;
+  if (!fase_actual && typeof moderacion_automatica_qr === 'boolean' && !hasIdentityUpdate) {
+    responseMessage = nextAutoMod
+      ? 'Publicación directa en la fiesta activada.'
+      : 'Modo seguro activado: las fotos requerirán aprobación previa.';
+  } else if (!fase_actual && hasIdentityUpdate) {
+    responseMessage = 'Datos del evento y video oficial actualizados correctamente.';
+  }
+
   return res.json({
-    message: `Fase del sistema actualizada a ${nextFase}`,
+    message: responseMessage,
     config: normalizedConfig,
   });
 });

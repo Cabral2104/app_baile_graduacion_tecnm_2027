@@ -23,6 +23,7 @@ import {
   Search,
   Heart,
   Award,
+  ExternalLink,
 } from 'lucide-react';
 import { MediaItem, SystemConfig, User, MediaEtapa } from '../types';
 import { api } from '../services/api';
@@ -473,6 +474,15 @@ export const MemoryGallery: React.FC<MemoryGalleryProps> = ({
     setTimeout(() => setFeedbackBanner(null), 5000);
   };
 
+  const rawOfficialVideo = config?.url_video_oficial?.trim() || '';
+  const officialVideoHref = !rawOfficialVideo
+    ? null
+    : /^https?:\/\//i.test(rawOfficialVideo) || rawOfficialVideo.startsWith('/')
+    ? rawOfficialVideo
+    : /^[a-z0-9.-]+\.[a-z]{2,}/i.test(rawOfficialVideo)
+    ? `https://${rawOfficialVideo}`
+    : null;
+
   return (
     <div className="space-y-6">
       {feedbackBanner && (
@@ -488,7 +498,7 @@ export const MemoryGallery: React.FC<MemoryGalleryProps> = ({
           <div className="space-y-1">
             <span className="font-display text-[10.5px] uppercase tracking-[0.22em] text-gala-gold font-semibold inline-flex items-center gap-1.5">
               <Sparkles className="w-3.5 h-3.5 text-gala-silver" />
-              Video Conmemorativo · 2022 – 2026
+              Video Conmemorativo · {config?.nombre_generacion || '2022 – 2026'}
             </span>
             <h2 className="font-serif font-semibold text-2xl sm:text-4xl text-gala-ivory">
               Modo Memoria · Recuerdos de la Carrera
@@ -498,8 +508,20 @@ export const MemoryGallery: React.FC<MemoryGalleryProps> = ({
             </p>
           </div>
 
-          {/* 2 Botones Principales Grandes y Claros */}
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 shrink-0">
+          {/* Botones Principales Grandes y Claros */}
+          <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-2.5 shrink-0">
+            {officialVideoHref && (
+              <a
+                href={officialVideoHref}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-4 py-3 rounded-xl bg-gala-gold/20 hover:bg-gala-gold/30 border border-gala-gold text-gala-champagne font-semibold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg transition"
+              >
+                <ExternalLink className="w-4 h-4 text-gala-gold shrink-0" />
+                <span>Ver Video Oficial Completo</span>
+              </a>
+            )}
+
             <button
               type="button"
               disabled={videoMemories.length === 0}

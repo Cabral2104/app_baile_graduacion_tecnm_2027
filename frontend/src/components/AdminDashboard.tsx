@@ -32,6 +32,9 @@ import {
   Check,
   FolderArchive,
   Camera,
+  Shield,
+  Video,
+  Globe,
 } from 'lucide-react';
 import {
   AdminOverviewResponse,
@@ -47,10 +50,14 @@ import { useGalaConfirm } from './GalaConfirmModal';
 
 interface AdminDashboardProps {
   onConfigChanged: () => void;
+  onOpenLiveScreen?: () => void;
+  currentUserId?: string;
 }
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onConfigChanged,
+  onOpenLiveScreen,
+  currentUserId,
 }) => {
   const confirm = useGalaConfirm();
   const [data, setData] = useState<AdminOverviewResponse | null>(null);
@@ -75,6 +82,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [editGuestName, setEditGuestName] = useState('');
   const [editGuestBadge, setEditGuestBadge] = useState('');
   const [editGuestMesa, setEditGuestMesa] = useState('');
+  const [editGuestRole, setEditGuestRole] = useState<'ALUMNO' | 'ADMIN'>('ALUMNO');
 
   // Paginación para moderación de fotos y lista de invitados
   const [mediaPage, setMediaPage] = useState(1);
@@ -93,7 +101,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [newGuestName, setNewGuestName] = useState('');
   const [newGuestBadge, setNewGuestBadge] = useState('');
   const [newGuestMesa, setNewGuestMesa] = useState('');
+  const [newGuestRole, setNewGuestRole] = useState<'ALUMNO' | 'ADMIN'>('ALUMNO');
   const [excelBulkText, setExcelBulkText] = useState('');
+
+  // Identidad del Evento y Video Conmemorativo Final
+  const [cfgTitulo, setCfgTitulo] = useState('');
+  const [cfgGeneracion, setCfgGeneracion] = useState('');
+  const [cfgSubtitulo, setCfgSubtitulo] = useState('');
+  const [cfgVideoUrl, setCfgVideoUrl] = useState('');
+  const [savingConfig, setSavingConfig] = useState(false);
 
   // Filtro de elementos multimedia según la pestaña de estado activa (Pendientes, Aprobadas Video, Aprobadas Fiesta, etc.)
   const currentStatusMedia = React.useMemo(() => {
@@ -139,6 +155,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       const res = await api.getAdminOverview();
       setData(res);
       setStoryboard(res.storyboard);
+      setCfgTitulo(res.config.titulo_evento || '');
+      setCfgGeneracion(res.config.nombre_generacion || '');
+      setCfgSubtitulo(res.config.subtitulo_evento || '');
+      setCfgVideoUrl(res.config.url_video_oficial || '');
     } catch (err: any) {
       showToast(err.message || 'Error al cargar el panel administrativo.');
     } finally {
@@ -344,13 +364,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setEditGuestName(u.nombre_completo);
     setEditGuestBadge(u.distintivo_homonimo || '');
     setEditGuestMesa(u.mesa || '');
+    setEditGuestRole(u.rol === 'ADMIN' ? 'ADMIN' : 'ALUMNO');
   };
 
   const handleSaveEditUser = async (userId: string) => {
     if (!editGuestName.trim()) return;
+    const isSelf = userId === currentUserId;
+    const targetRole: 'ALUMNO' | 'ADMIN' = isSelf ? 'ADMIN' : editGuestRole;
+    const roleLabel =
+      targetRole === 'ADMIN'
+        ? 'Organizadora / Comité Admin'
+        : 'Alumno / Graduado';
     const ok = await confirm({
       title: '¿Guardar cambios del invitado?',
-      description: `Se actualizarán los datos de "${editGuestName.trim()}" en la mesa "${editGuestMesa.trim() || 'Mesa por asignar'}".`,
+      description: `Se actualizarán los datos de "${editGuestName.trim()}" (${roleLabel}) en "${editGuestMesa.trim() || 'Mesa por asignar'}".`,
       confirmText: 'Sí, guardar cambios',
       variant: 'gold',
     });
@@ -361,6 +388,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         nombre_completo: editGuestName.trim(),
         distintivo_homonimo: editGuestBadge.trim(),
         mesa: editGuestMesa.trim(),
+        rol: targetRole,
       });
       setEditingUserId(null);
       showToast(res.message);
@@ -410,16 +438,30 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const handleAddGuest = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newGuestName.trim()) return;
+    const roleLabel =
+      newGuestRole === 'ADMIN'
+        ? 'Organizadora / Comité Admin'
+        : 'Alumno / Graduado';
+    const ok = await confirm({
+      title: '¿Agregar registro al padrón?',
+      description: `Se agregará a "${newGuestName.trim()}" con rol ${roleLabel}${
+        newGuestMesa.trim() ? ` en "${newGuestMesa.trim()}"` : ''
+      }.`,
+      confirmText: 'Sí, agregar',
+      variant: 'gold',
+    });
+    if (!ok) return;
     try {
       const res = await api.createUser({
         nombre_completo: newGuestName.trim(),
         distintivo_homonimo: newGuestBadge.trim(),
         mesa: newGuestMesa.trim(),
-        rol: 'ALUMNO',
+        rol: newGuestRole,
       });
       setNewGuestName('');
       setNewGuestBadge('');
       setNewGuestMesa('');
+      setNewGuestRole('ALUMNO');
       showToast(res.message);
       await fetchOverview();
     } catch (err: any) {
@@ -518,6 +560,45 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
+  const handleSaveEventIdentity = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const nextTitulo = cfgTitulo.trim();
+    const nextGen = cfgGeneracion.trim();
+    const nextSub = cfgSubtitulo.trim();
+    const rawVideo = cfgVideoUrl.trim();
+    if (!nextTitulo || !nextGen) {
+      showToast('El título del evento y la generación son obligatorios.');
+      return;
+    }
+
+    const ok = await confirm({
+      title: '¿Guardar identidad y video oficial?',
+      description: `Todos los invitados verán "${nextTitulo}" · "${nextGen}"${
+        rawVideo ? ' junto al enlace del Video Oficial Completo en Modo Memoria' : ''
+      }.`,
+      confirmText: 'Sí, guardar cambios',
+      variant: 'gold',
+    });
+    if (!ok) return;
+
+    setSavingConfig(true);
+    try {
+      const res = await api.updateConfig({
+        titulo_evento: nextTitulo,
+        nombre_generacion: nextGen,
+        subtitulo_evento: nextSub,
+        url_video_oficial: rawVideo,
+      });
+      showToast(res.message);
+      await fetchOverview();
+      onConfigChanged();
+    } catch (err: any) {
+      showToast(err.message || 'Error al guardar los datos del evento.');
+    } finally {
+      setSavingConfig(false);
+    }
+  };
+
   if (loading || !data) {
     return (
       <div className="py-16 text-center text-sm text-gala-parchment">
@@ -603,16 +684,30 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </p>
           </div>
 
-          <button
-            type="button"
-            disabled={downloadingBackup}
-            onClick={handleDownloadBackup}
-            className="px-4 py-2.5 rounded-xl btn-silver text-xs font-semibold text-gala-champagne flex items-center gap-2 shrink-0 disabled:opacity-50"
-            title="Descargar copia de seguridad completa de la base de datos"
-          >
-            <Database className="w-4 h-4 text-gala-gold" />
-            <span>{downloadingBackup ? 'Respaldando...' : 'Respaldo DB (.db)'}</span>
-          </button>
+          <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+            {onOpenLiveScreen && (
+              <button
+                type="button"
+                onClick={onOpenLiveScreen}
+                className="px-4 py-2.5 rounded-xl btn-gold text-xs font-semibold text-gala-obsidian flex items-center gap-2 shadow-lg transition"
+                title="Abrir el carrusel en vivo para el proyector o pantalla gigante del salón"
+              >
+                <Tv className="w-4 h-4" />
+                <span>Abrir Pantalla del Salón</span>
+              </button>
+            )}
+
+            <button
+              type="button"
+              disabled={downloadingBackup}
+              onClick={handleDownloadBackup}
+              className="px-4 py-2.5 rounded-xl btn-silver text-xs font-semibold text-gala-champagne flex items-center gap-2 shrink-0 disabled:opacity-50"
+              title="Descargar copia de seguridad completa de la base de datos"
+            >
+              <Database className="w-4 h-4 text-gala-gold" />
+              <span>{downloadingBackup ? 'Respaldando...' : 'Respaldo DB (.db)'}</span>
+            </button>
+          </div>
         </div>
 
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -1187,9 +1282,25 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 type="text"
                 value={newGuestMesa}
                 onChange={(e) => setNewGuestMesa(e.target.value)}
-                placeholder="Mesa (ej. Mesa 05)"
+                placeholder="Mesa (ej. Mesa 05 o Comité)"
                 className="w-full px-3.5 py-2.5 rounded-xl bg-gala-obsidian border border-gala-silver/30 text-xs text-gala-ivory"
               />
+              <div className="space-y-1">
+                <label className="text-[11px] text-gala-silver/85 flex items-center gap-1.5">
+                  <Shield className="w-3 h-3 text-gala-gold" />
+                  <span>Rol en la plataforma</span>
+                </label>
+                <select
+                  value={newGuestRole}
+                  onChange={(e) =>
+                    setNewGuestRole(e.target.value === 'ADMIN' ? 'ADMIN' : 'ALUMNO')
+                  }
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-gala-obsidian border border-gala-silver/30 text-xs text-gala-ivory"
+                >
+                  <option value="ALUMNO">Alumno / Graduado</option>
+                  <option value="ADMIN">Organizadora / Comité Admin</option>
+                </select>
+              </div>
               <button
                 type="submit"
                 className="w-full py-2.5 rounded-xl btn-gold text-gala-obsidian font-semibold text-xs"
@@ -1262,7 +1373,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     className="p-3 rounded-xl bg-gala-obsidian/85 border border-gala-silver/15 flex flex-col gap-3"
                   >
                     {isEditing ? (
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
                         <input
                           type="text"
                           value={editGuestName}
@@ -1284,6 +1395,24 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           placeholder="Mesa (ej. Mesa 04)"
                           className="px-3 py-1.5 rounded-lg bg-gala-velvet border border-gala-silver/25 text-xs text-gala-ivory"
                         />
+                        <select
+                          value={u.id === currentUserId ? 'ADMIN' : editGuestRole}
+                          disabled={u.id === currentUserId}
+                          onChange={(e) =>
+                            setEditGuestRole(
+                              e.target.value === 'ADMIN' ? 'ADMIN' : 'ALUMNO'
+                            )
+                          }
+                          title={
+                            u.id === currentUserId
+                              ? 'No puedes retirar tu propio rol de Organizadora'
+                              : 'Rol en la plataforma'
+                          }
+                          className="px-3 py-1.5 rounded-lg bg-gala-velvet border border-gala-silver/25 text-xs text-gala-ivory disabled:opacity-60"
+                        >
+                          <option value="ALUMNO">Alumno / Graduado</option>
+                          <option value="ADMIN">Organizadora / Comité</option>
+                        </select>
                       </div>
                     ) : null}
 
@@ -1504,6 +1633,96 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </button>
             </div>
           </div>
+
+          {/* Identidad del Evento y Video Conmemorativo Final */}
+          <form
+            onSubmit={handleSaveEventIdentity}
+            className="pt-6 border-t border-gala-silver/15 space-y-4"
+          >
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <h3 className="font-serif text-xl text-gala-ivory flex items-center gap-2">
+                  <Globe className="w-4 h-4 text-gala-gold shrink-0" />
+                  <span>Identidad del Evento y Video Conmemorativo Final</span>
+                </h3>
+                <p className="text-xs text-gala-parchment/80 mt-0.5">
+                  Personaliza los títulos visibles en la portada, el encabezado y el enlace al video oficial terminado (YouTube, Drive o Vimeo).
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+              <div className="space-y-1">
+                <label className="text-[11px] font-medium text-gala-silver/90">
+                  Título del Evento
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={cfgTitulo}
+                  onChange={(e) => setCfgTitulo(e.target.value)}
+                  placeholder="Ej. Graduación TECNM"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-gala-obsidian border border-gala-silver/30 text-xs text-gala-ivory focus:border-gala-gold/60 outline-none"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[11px] font-medium text-gala-silver/90">
+                  Generación
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={cfgGeneracion}
+                  onChange={(e) => setCfgGeneracion(e.target.value)}
+                  placeholder="Ej. Generación 2022 – 2026"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-gala-obsidian border border-gala-silver/30 text-xs text-gala-ivory focus:border-gala-gold/60 outline-none"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[11px] font-medium text-gala-silver/90">
+                  Subtítulo / Institución
+                </label>
+                <input
+                  type="text"
+                  value={cfgSubtitulo}
+                  onChange={(e) => setCfgSubtitulo(e.target.value)}
+                  placeholder="Ej. Tecnológico Nacional de México"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-gala-obsidian border border-gala-silver/30 text-xs text-gala-ivory focus:border-gala-gold/60 outline-none"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[11px] font-medium text-gala-silver/90 flex items-center gap-1.5">
+                  <Video className="w-3.5 h-3.5 text-gala-gold" />
+                  <span>Enlace del Video Oficial (opcional)</span>
+                </label>
+                <input
+                  type="text"
+                  value={cfgVideoUrl}
+                  onChange={(e) => setCfgVideoUrl(e.target.value)}
+                  placeholder="https://youtu.be/... o https://drive.google.com/..."
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-gala-obsidian border border-gala-silver/30 text-xs text-gala-ivory focus:border-gala-gold/60 outline-none"
+                />
+              </div>
+            </div>
+
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <p className="text-[11px] text-gala-muted">
+                Si dejas un enlace guardado aquí, aparecerá el botón dorado{' '}
+                <strong className="text-gala-champagne">Ver Video Oficial Completo</strong> en Modo Memoria. Déjalo vacío para ocultarlo.
+              </p>
+              <button
+                type="submit"
+                disabled={savingConfig}
+                className="px-5 py-2.5 rounded-xl btn-gold text-gala-obsidian font-semibold text-xs inline-flex items-center justify-center gap-1.5 shrink-0 disabled:opacity-50"
+              >
+                <Check className="w-4 h-4" />
+                <span>{savingConfig ? 'Guardando...' : 'Guardar Datos del Evento'}</span>
+              </button>
+            </div>
+          </form>
 
           {/* Exportación Completa Post-Evento (ZIPs por Categoría) y Respaldo de Base de Datos */}
           <div className="pt-6 border-t border-gala-silver/15 space-y-3">

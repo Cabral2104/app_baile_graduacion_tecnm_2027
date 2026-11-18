@@ -4,9 +4,20 @@ const crypto = require('node:crypto');
 const { DatabaseSync } = require('node:sqlite');
 const { normalizeText, hashPin } = require('../utils/security');
 
-const DB_PATH = path.resolve(__dirname, '../../graduacion.db');
-const STORAGE_UPLOADS_DIR = path.resolve(__dirname, '../../../storage/uploads');
-const STORAGE_EXPORTS_DIR = path.resolve(__dirname, '../../../storage/exports');
+const DATA_DIR = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : null;
+const DB_PATH = DATA_DIR
+  ? path.join(DATA_DIR, 'graduacion.db')
+  : path.resolve(__dirname, '../../graduacion.db');
+const STORAGE_UPLOADS_DIR = DATA_DIR
+  ? path.join(DATA_DIR, 'uploads')
+  : path.resolve(__dirname, '../../../storage/uploads');
+const STORAGE_EXPORTS_DIR = DATA_DIR
+  ? path.join(DATA_DIR, 'exports')
+  : path.resolve(__dirname, '../../../storage/exports');
+
+if (DATA_DIR) {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+}
 
 fs.mkdirSync(STORAGE_UPLOADS_DIR, { recursive: true });
 fs.mkdirSync(STORAGE_EXPORTS_DIR, { recursive: true });

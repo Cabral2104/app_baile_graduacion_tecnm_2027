@@ -1,0 +1,20 @@
+{
+  "name": "Graduación TECNM · Noche de Gala",
+  "short_name": "Gala TECNM",
+  "description": "Plataforma en vivo, memoria generacional y galería oficial de Graduación TECNM 2022 - 2026.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#040818",
+  "theme_color": "#040818",
+  "lang": "es",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
+
