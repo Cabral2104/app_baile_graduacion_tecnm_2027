@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -93,6 +93,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [rehearsalIndex, setRehearsalIndex] = useState(0);
   const [rehearsalPlaying, setRehearsalPlaying] = useState(true);
   const [rehearsalProgressPct, setRehearsalProgressPct] = useState(0);
+  const [rehearsalVideoProgressPct, setRehearsalVideoProgressPct] = useState(0);
+  const rehearsalVideoRef = useRef<HTMLVideoElement | null>(null);
 
   // Estado de Gestión de Usuarios y Pegado desde Excel
   const [userSearch, setUserSearch] = useState('');
@@ -175,7 +177,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   useEffect(() => {
     setRehearsalProgressPct(0);
+    setRehearsalVideoProgressPct(0);
   }, [rehearsalIndex, rehearsalOpen]);
+
+  useEffect(() => {
+    if (!rehearsalOpen || !currentRehearsalIsVideo || !rehearsalVideoRef.current) return;
+    if (rehearsalPlaying) {
+      rehearsalVideoRef.current.play().catch(() => { });
+    } else {
+      rehearsalVideoRef.current.pause();
+    }
+  }, [rehearsalOpen, rehearsalPlaying, rehearsalIndex, currentRehearsalIsVideo]);
 
   // Avance automático fluido en Modo Ensayo
   useEffect(() => {
@@ -220,35 +232,35 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     const confirmMeta =
       estado === 'RECHAZADO'
         ? {
-            title: '¿Descartar fotografía?',
-            description:
-              'La fotografía se ocultará de las galerías públicas y dejará de proyectarse si estaba activa.',
-            confirmText: 'Sí, descartar',
-            variant: 'danger' as const,
-          }
+          title: '¿Descartar fotografía?',
+          description:
+            'La fotografía se ocultará de las galerías públicas y dejará de proyectarse si estaba activa.',
+          confirmText: 'Sí, descartar',
+          variant: 'danger' as const,
+        }
         : restaurarPrivacidad
-        ? {
+          ? {
             title: '¿Restaurar fotografía?',
             description:
               'Se quitará el reporte de privacidad y el archivo volverá a mostrarse públicamente.',
             confirmText: 'Sí, restaurar',
             variant: 'warning' as const,
           }
-        : estado === 'APROBADO_VIDEO'
-        ? {
-            title: '¿Aprobar para el Video (Modo Memoria)?',
-            description:
-              'Se publicará en Modo Memoria y se agregará automáticamente a la secuencia del video conmemorativo.',
-            confirmText: 'Sí, enviar al video',
-            variant: 'gold' as const,
-          }
-        : {
-            title: '¿Publicar en Día de la Fiesta?',
-            description:
-              'Esta fotografía aparecerá inmediatamente en Día de la Fiesta y en el proyector en vivo del salón.',
-            confirmText: 'Sí, publicar en vivo',
-            variant: 'gold' as const,
-          };
+          : estado === 'APROBADO_VIDEO'
+            ? {
+              title: '¿Aprobar para el Video (Modo Memoria)?',
+              description:
+                'Se publicará en Modo Memoria y se agregará automáticamente a la secuencia del video conmemorativo.',
+              confirmText: 'Sí, enviar al video',
+              variant: 'gold' as const,
+            }
+            : {
+              title: '¿Publicar en Día de la Fiesta?',
+              description:
+                'Esta fotografía aparecerá inmediatamente en Día de la Fiesta y en el proyector en vivo del salón.',
+              confirmText: 'Sí, publicar en vivo',
+              variant: 'gold' as const,
+            };
 
     const ok = await confirm(confirmMeta);
     if (!ok) return;
@@ -358,8 +370,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         scope === 'FIESTA'
           ? 'Paquete ZIP de Día de la Fiesta descargado.'
           : scope === 'FOTOGRAFO'
-          ? 'Paquete ZIP del Fotógrafo Oficial descargado.'
-          : 'Archivo ZIP ordenado (001, 002...) descargado.';
+            ? 'Paquete ZIP del Fotógrafo Oficial descargado.'
+            : 'Archivo ZIP ordenado (001, 002...) descargado.';
       showToast(label);
     } catch (err: any) {
       showToast(err.message || 'Error al exportar el archivo ZIP.');
@@ -440,9 +452,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     const targetUser = data?.users.find((u) => u.id === userId);
     const ok = await confirm({
       title: '¿Restablecer PIN de acceso?',
-      description: `Se borrará el PIN actual de ${
-        targetUser ? `"${targetUser.nombre_completo}"` : 'este invitado'
-      }. En su próximo ingreso deberá registrar uno nuevo de 4 dígitos.`,
+      description: `Se borrará el PIN actual de ${targetUser ? `"${targetUser.nombre_completo}"` : 'este invitado'
+        }. En su próximo ingreso deberá registrar uno nuevo de 4 dígitos.`,
       confirmText: 'Sí, borrar PIN',
       variant: 'warning',
     });
@@ -465,9 +476,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         : 'Alumno / Graduado';
     const ok = await confirm({
       title: '¿Agregar registro al padrón?',
-      description: `Se agregará a "${newGuestName.trim()}" con rol ${roleLabel}${
-        newGuestMesa.trim() ? ` en "${newGuestMesa.trim()}"` : ''
-      }.`,
+      description: `Se agregará a "${newGuestName.trim()}" con rol ${roleLabel}${newGuestMesa.trim() ? ` en "${newGuestMesa.trim()}"` : ''
+        }.`,
       confirmText: 'Sí, agregar',
       variant: 'gold',
     });
@@ -538,8 +548,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       fase === 'EN_VIVO'
         ? 'Día de la Fiesta (En Vivo)'
         : fase === 'MEMORIA'
-        ? 'Fiesta Terminada (Solo lectura invitados)'
-        : 'Antes de la Fiesta (Solo Memorias)';
+          ? 'Fiesta Terminada (Solo lectura invitados)'
+          : 'Antes de la Fiesta (Solo Memorias)';
 
     const ok = await confirm({
       title: '¿Cambiar fase del evento?',
@@ -784,11 +794,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         <button
           type="button"
           onClick={() => setActiveSubTab('MODERATION')}
-          className={`p-3 rounded-xl text-left border transition flex items-center gap-2.5 ${
-            activeSubTab === 'MODERATION'
+          className={`p-3 rounded-xl text-left border transition flex items-center gap-2.5 ${activeSubTab === 'MODERATION'
               ? 'btn-gold border-gala-gold font-semibold shadow-lg'
               : 'bg-gala-velvet text-gala-silver border-gala-silver/20 hover:border-gala-gold/45'
-          }`}
+            }`}
         >
           <Sparkles className="w-4 h-4 shrink-0" />
           <div className="min-w-0">
@@ -802,11 +811,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         <button
           type="button"
           onClick={() => setActiveSubTab('STORYBOARD')}
-          className={`p-3 rounded-xl text-left border transition flex items-center gap-2.5 ${
-            activeSubTab === 'STORYBOARD'
+          className={`p-3 rounded-xl text-left border transition flex items-center gap-2.5 ${activeSubTab === 'STORYBOARD'
               ? 'btn-gold border-gala-gold font-semibold shadow-lg'
               : 'bg-gala-velvet text-gala-silver border-gala-silver/20 hover:border-gala-gold/45'
-          }`}
+            }`}
         >
           <Layers className="w-4 h-4 shrink-0" />
           <div className="min-w-0">
@@ -820,11 +828,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         <button
           type="button"
           onClick={() => setActiveSubTab('USERS')}
-          className={`p-3 rounded-xl text-left border transition flex items-center gap-2.5 ${
-            activeSubTab === 'USERS'
+          className={`p-3 rounded-xl text-left border transition flex items-center gap-2.5 ${activeSubTab === 'USERS'
               ? 'btn-gold border-gala-gold font-semibold shadow-lg'
               : 'bg-gala-velvet text-gala-silver border-gala-silver/20 hover:border-gala-gold/45'
-          }`}
+            }`}
         >
           <Users className="w-4 h-4 shrink-0" />
           <div className="min-w-0">
@@ -838,11 +845,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         <button
           type="button"
           onClick={() => setActiveSubTab('QR_KIT')}
-          className={`p-3 rounded-xl text-left border transition flex items-center gap-2.5 ${
-            activeSubTab === 'QR_KIT'
+          className={`p-3 rounded-xl text-left border transition flex items-center gap-2.5 ${activeSubTab === 'QR_KIT'
               ? 'btn-gold border-gala-gold font-semibold shadow-lg'
               : 'bg-gala-velvet text-gala-silver border-gala-silver/20 hover:border-gala-gold/45'
-          }`}
+            }`}
         >
           <QrCode className="w-4 h-4 shrink-0" />
           <div className="min-w-0">
@@ -856,11 +862,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         <button
           type="button"
           onClick={() => setActiveSubTab('CONFIG')}
-          className={`p-3 rounded-xl text-left border transition flex items-center gap-2.5 ${
-            activeSubTab === 'CONFIG'
+          className={`p-3 rounded-xl text-left border transition flex items-center gap-2.5 ${activeSubTab === 'CONFIG'
               ? 'btn-gold border-gala-gold font-semibold shadow-lg'
               : 'bg-gala-velvet text-gala-silver border-gala-silver/20 hover:border-gala-gold/45'
-          }`}
+            }`}
         >
           <Settings className="w-4 h-4 shrink-0" />
           <div className="min-w-0">
@@ -893,11 +898,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   setStatusFilter(f.id);
                   setMediaPage(1);
                 }}
-                className={`px-3.5 py-2 rounded-xl text-xs border transition ${
-                  statusFilter === f.id
+                className={`px-3.5 py-2 rounded-xl text-xs border transition ${statusFilter === f.id
                     ? 'bg-gala-gold/20 border-gala-gold text-gala-champagne font-semibold'
                     : 'bg-gala-obsidian/85 border-gala-silver/20 text-gala-silver hover:border-gala-gold/45'
-                }`}
+                  }`}
               >
                 {f.label}
               </button>
@@ -1074,11 +1078,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       <button
                         type="button"
                         onClick={() => handleModerate(item.id, 'APROBADO_VIDEO', true)}
-                        className={`py-2.5 px-2 rounded-xl text-[11px] font-medium flex flex-col items-center justify-center gap-1 border text-center transition ${
-                          item.estado === 'APROBADO_VIDEO'
+                        className={`py-2.5 px-2 rounded-xl text-[11px] font-medium flex flex-col items-center justify-center gap-1 border text-center transition ${item.estado === 'APROBADO_VIDEO'
                             ? 'btn-gold border-gala-gold font-bold'
                             : 'bg-gala-surface hover:bg-gala-gold/20 text-gala-champagne border-gala-silver/30'
-                        }`}
+                          }`}
                       >
                         <Film className="w-4 h-4" />
                         <span>Modo Memoria (Video)</span>
@@ -1087,11 +1090,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       <button
                         type="button"
                         onClick={() => handleModerate(item.id, 'APROBADO_GALERIA', true)}
-                        className={`py-2.5 px-2 rounded-xl text-[11px] font-medium flex flex-col items-center justify-center gap-1 border text-center transition ${
-                          item.estado === 'APROBADO_GALERIA'
+                        className={`py-2.5 px-2 rounded-xl text-[11px] font-medium flex flex-col items-center justify-center gap-1 border text-center transition ${item.estado === 'APROBADO_GALERIA'
                             ? 'bg-emerald-500 text-gala-obsidian border-emerald-400 font-bold'
                             : 'bg-gala-surface hover:bg-emerald-950/60 text-emerald-300 border-emerald-500/30'
-                        }`}
+                          }`}
                       >
                         <Tv className="w-4 h-4" />
                         <span>Día de la Fiesta</span>
@@ -1100,11 +1102,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       <button
                         type="button"
                         onClick={() => handleModerate(item.id, 'RECHAZADO', false)}
-                        className={`py-2.5 px-2 rounded-xl text-[11px] font-medium flex flex-col items-center justify-center gap-1 border text-center transition ${
-                          item.estado === 'RECHAZADO'
+                        className={`py-2.5 px-2 rounded-xl text-[11px] font-medium flex flex-col items-center justify-center gap-1 border text-center transition ${item.estado === 'RECHAZADO'
                             ? 'bg-red-600 text-white border-red-500 font-bold'
                             : 'bg-gala-surface hover:bg-red-950/60 text-red-300 border-red-500/30'
-                        }`}
+                          }`}
                       >
                         <X className="w-4 h-4" />
                         <span>Descartar</span>
@@ -1195,11 +1196,21 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       {seqCode}
                     </div>
                     <div className="w-20 h-14 rounded-lg overflow-hidden bg-gala-obsidian border border-gala-silver/25 shrink-0">
-                      <img
-                        src={item.archivo_url}
-                        alt={item.pie_de_foto}
-                        className="w-full h-full object-cover"
-                      />
+                      {item.tipo_medio === 'VIDEO' ? (
+                        <video
+                          src={item.archivo_url}
+                          muted
+                          playsInline
+                          preload="metadata"
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <img
+                          src={item.archivo_url}
+                          alt={item.pie_de_foto}
+                          className="w-full h-full object-cover"
+                        />
+                      )}
                     </div>
                     <div className="min-w-0">
                       <span className="text-[10px] uppercase px-2 py-0.5 rounded bg-gala-obsidian border border-gala-silver/25 text-gala-champagne">
@@ -1215,21 +1226,28 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </div>
 
                   <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0">
-                    <div className="flex items-center gap-1.5 text-xs text-gala-silver">
-                      <span>Segundos:</span>
-                      <select
-                        value={item.duracion_display_seg || 4}
-                        onChange={(e) =>
-                          handleDurationChange(idx, Number(e.target.value))
-                        }
-                        className="bg-gala-obsidian border border-gala-silver/30 rounded-lg px-2 py-1 font-mono text-xs text-gala-champagne"
-                      >
-                        <option value={3}>3 seg</option>
-                        <option value={4}>4 seg</option>
-                        <option value={5}>5 seg</option>
-                        <option value={6}>6 seg</option>
-                      </select>
-                    </div>
+                    {item.tipo_medio === 'VIDEO' ? (
+                      <span className="px-2.5 py-1 rounded-lg bg-gala-obsidian border border-gala-gold/30 font-mono text-[11px] text-gala-champagne flex items-center gap-1">
+                        <Film className="w-3 h-3 text-gala-gold" />
+                        <span>Clip completo</span>
+                      </span>
+                    ) : (
+                      <div className="flex items-center gap-1.5 text-xs text-gala-silver">
+                        <span>Segundos:</span>
+                        <select
+                          value={item.duracion_display_seg || 4}
+                          onChange={(e) =>
+                            handleDurationChange(idx, Number(e.target.value))
+                          }
+                          className="bg-gala-obsidian border border-gala-silver/30 rounded-lg px-2 py-1 font-mono text-xs text-gala-champagne"
+                        >
+                          <option value={3}>3 seg</option>
+                          <option value={4}>4 seg</option>
+                          <option value={5}>5 seg</option>
+                          <option value={6}>6 seg</option>
+                        </select>
+                      </div>
+                    )}
 
                     <div className="flex items-center gap-1">
                       <button
@@ -1470,11 +1488,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         ) : (
                           <>
                             <span
-                              className={`text-[11px] px-2.5 py-1 rounded-md border ${
-                                u.tiene_pin
+                              className={`text-[11px] px-2.5 py-1 rounded-md border ${u.tiene_pin
                                   ? 'bg-emerald-950/60 border-emerald-500/30 text-emerald-300'
                                   : 'bg-gala-surface border-gala-silver/20 text-gala-muted'
-                              }`}
+                                }`}
                             >
                               {u.tiene_pin ? 'Tiene PIN' : 'Sin PIN'}
                             </span>
@@ -1576,11 +1593,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   key={card.fase}
                   type="button"
                   onClick={() => handleUpdatePhase(card.fase, card.openUploads)}
-                  className={`text-left p-5 rounded-2xl border transition flex flex-col justify-between gap-4 ${
-                    isCurrent
+                  className={`text-left p-5 rounded-2xl border transition flex flex-col justify-between gap-4 ${isCurrent
                       ? 'bg-gala-gold/15 border-gala-gold shadow-xl'
                       : 'bg-gala-obsidian/85 border-gala-silver/20 hover:border-gala-gold/50'
-                  }`}
+                    }`}
                 >
                   <div>
                     <div className="flex items-center justify-between">
@@ -1611,11 +1627,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     Publicación Directa en la Fiesta (Sin revisión previa)
                   </span>
                   <span
-                    className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase ${
-                      data.config.moderacion_automatica_qr
+                    className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase ${data.config.moderacion_automatica_qr
                         ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
                         : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
-                    }`}
+                      }`}
                   >
                     {data.config.moderacion_automatica_qr ? 'Activada' : 'Desactivada'}
                   </span>
@@ -1632,11 +1647,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 onClick={() =>
                   handleToggleAutoModeration(!data.config.moderacion_automatica_qr)
                 }
-                className={`px-5 py-2.5 rounded-xl text-xs font-semibold shrink-0 transition shadow ${
-                  data.config.moderacion_automatica_qr
+                className={`px-5 py-2.5 rounded-xl text-xs font-semibold shrink-0 transition shadow ${data.config.moderacion_automatica_qr
                     ? 'btn-silver text-gala-ivory'
                     : 'btn-gold text-gala-obsidian'
-                }`}
+                  }`}
               >
                 {data.config.moderacion_automatica_qr
                   ? 'Desactivar Publicación Directa'
@@ -1769,20 +1783,49 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <div
                       className="h-full bg-gradient-to-r from-gala-silver via-gala-gold to-gala-champagne transition-all duration-100 ease-linear"
                       style={{
-                        width: `${
-                          currentRehearsalIsVideo ? 100 : rehearsalProgressPct
-                        }%`,
+                        width: `${currentRehearsalIsVideo
+                            ? rehearsalVideoProgressPct
+                            : rehearsalProgressPct
+                          }%`,
                       }}
                     />
                   </div>
                 </div>
 
                 <div className="relative z-20 flex-1 min-h-0 px-4 sm:px-8 py-2 flex items-center justify-center overflow-hidden">
-                  <img
-                    src={currentRehearsalItem.archivo_url}
-                    alt={currentRehearsalItem.pie_de_foto}
-                    className="max-h-full max-w-full object-contain rounded-2xl border border-gala-silver/35 shadow-2xl"
-                  />
+                  {currentRehearsalIsVideo ? (
+                    <video
+                      key={currentRehearsalItem.id}
+                      ref={rehearsalVideoRef}
+                      src={currentRehearsalItem.archivo_url}
+                      autoPlay
+                      muted
+                      playsInline
+                      controls
+                      onTimeUpdate={(e) => {
+                        const v = e.currentTarget;
+                        if (v.duration && Number.isFinite(v.duration) && v.duration > 0) {
+                          setRehearsalVideoProgressPct(
+                            Math.min(100, (v.currentTime / v.duration) * 100)
+                          );
+                        }
+                      }}
+                      onEnded={() => {
+                        if (rehearsalPlaying) {
+                          setRehearsalProgressPct(0);
+                          setRehearsalVideoProgressPct(0);
+                          setRehearsalIndex((prev) => (prev + 1) % storyboard.length);
+                        }
+                      }}
+                      className="max-h-full max-w-full object-contain rounded-2xl border border-gala-silver/35 shadow-2xl"
+                    />
+                  ) : (
+                    <img
+                      src={currentRehearsalItem.archivo_url}
+                      alt={currentRehearsalItem.pie_de_foto}
+                      className="max-h-full max-w-full object-contain rounded-2xl border border-gala-silver/35 shadow-2xl"
+                    />
+                  )}
                 </div>
 
                 <div className="relative z-20 px-4 sm:px-8 pb-5 pt-2 max-w-2xl mx-auto w-full text-center space-y-3">

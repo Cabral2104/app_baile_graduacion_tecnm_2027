@@ -194,9 +194,11 @@ export const EditorialLightbox: React.FC<EditorialLightboxProps> = ({
                 >
                   {currentItem.tipo_medio === 'VIDEO' ? (
                     <video
+                      key={currentItem.id}
                       src={currentItem.archivo_url}
                       controls
                       autoPlay
+                      playsInline
                       className="max-h-full max-w-full object-contain rounded-xl shadow-2xl"
                     />
                   ) : (

@@ -14,6 +14,8 @@ import {
   Heart,
   QrCode,
   Timer,
+  Volume2,
+  VolumeX,
 } from 'lucide-react';
 import { MediaItem, SystemConfig } from '../types';
 import { api } from '../services/api';
@@ -55,6 +57,8 @@ export const LiveWallScreen: React.FC<LiveWallScreenProps> = ({ onExit }) => {
   const [backendConnected, setBackendConnected] = useState(true);
   const [bufferedCount, setBufferedCount] = useState(0);
   const [progressPct, setProgressPct] = useState(0);
+  const [videoMuted, setVideoMuted] = useState(true);
+  const [videoProgressPct, setVideoProgressPct] = useState(0);
 
   // Estados para partículas de reacciones flotantes y alertas de mesas
   const [particles, setParticles] = useState<FloatingParticle[]>([]);
@@ -63,6 +67,7 @@ export const LiveWallScreen: React.FC<LiveWallScreenProps> = ({ onExit }) => {
   const blobCacheRef = useRef<Map<string, string>>(new Map());
   const currentItemRef = useRef<MediaItem | null>(null);
   const hideControlsTimerRef = useRef<number | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
 
   // Modo Proyector Limpio: ocultar controles tras 3.5s sin mover el mouse (si está reproduciendo)
   const revealControls = useCallback(() => {
@@ -102,6 +107,12 @@ export const LiveWallScreen: React.FC<LiveWallScreenProps> = ({ onExit }) => {
         const idx = (startIdx + offset) % list.length;
         const target = list[idx];
         if (!target) continue;
+
+        // Los videos usan streaming directo HTTP (rango 206) sin saturar la memoria Blob
+        if (target.tipo_medio === 'VIDEO') {
+          ready++;
+          continue;
+        }
 
         if (blobCacheRef.current.has(target.archivo_url)) {
           ready++;
@@ -275,14 +286,37 @@ export const LiveWallScreen: React.FC<LiveWallScreenProps> = ({ onExit }) => {
   const currentItem = items[currentIndex] || null;
   const currentIsVideo = currentItem?.tipo_medio === 'VIDEO';
 
+  const advanceSlide = useCallback(
+    (step: 1 | -1) => {
+      setProgressPct(0);
+      setVideoProgressPct(0);
+      if (items.length <= 1) {
+        if (currentIsVideo && videoRef.current) {
+          videoRef.current.currentTime = 0;
+          videoRef.current.play().catch(() => {});
+        }
+        return;
+      }
+      setCurrentIndex((prev) =>
+        step === 1
+          ? (prev + 1) % items.length
+          : prev === 0
+          ? items.length - 1
+          : prev - 1
+      );
+    },
+    [items.length, currentIsVideo]
+  );
+
   // Mantener actualizado el ref de la foto proyectada en tiempo real
   useEffect(() => {
     currentItemRef.current = currentItem;
   }, [currentItem]);
 
-  // Al cambiar de foto, reiniciamos el progreso y limpiamos notificaciones previas
+  // Al cambiar de elemento, reiniciamos progreso/notificaciones y sincronizamos precarga
   useEffect(() => {
     setProgressPct(0);
+    setVideoProgressPct(0);
     setReactionToasts([]);
     setParticles([]);
     if (items.length > 0) {
@@ -290,7 +324,17 @@ export const LiveWallScreen: React.FC<LiveWallScreenProps> = ({ onExit }) => {
     }
   }, [currentIndex, items.length, preloadUpcomingBuffer]);
 
-  // Avance automático inmune al polling según la velocidad configurada (5s, 8s o 12s)
+  // Sincronizar botón Pausar / Reproducir del proyector con el elemento <video> activo
+  useEffect(() => {
+    if (!currentIsVideo || !videoRef.current) return;
+    if (isPlaying) {
+      videoRef.current.play().catch(() => {});
+    } else {
+      videoRef.current.pause();
+    }
+  }, [isPlaying, currentIndex, currentIsVideo]);
+
+  // Avance automático inmune al polling según la velocidad configurada (5s, 8s o 12s) para fotos
   useEffect(() => {
     if (!isPlaying || items.length === 0 || currentIsVideo) return;
 
@@ -312,7 +356,9 @@ export const LiveWallScreen: React.FC<LiveWallScreenProps> = ({ onExit }) => {
   }, [isPlaying, currentIndex, items.length, currentIsVideo, slideDurationSec]);
 
   const resolvedMediaSrc = currentItem
-    ? blobCacheRef.current.get(currentItem.archivo_url) || currentItem.archivo_url
+    ? currentItem.tipo_medio === 'VIDEO'
+      ? currentItem.archivo_url
+      : blobCacheRef.current.get(currentItem.archivo_url) || currentItem.archivo_url
     : '';
 
   const requestFullScreen = () => {
@@ -335,12 +381,12 @@ export const LiveWallScreen: React.FC<LiveWallScreenProps> = ({ onExit }) => {
       <AmbientLeavesCanvas enabled density="subtle" />
       <div className="pointer-events-none fixed inset-3 sm:inset-4 border border-gala-silver/15 rounded-2xl z-20" />
 
-      {/* Línea fina de progreso en el borde superior */}
+      {/* Línea fina de progreso en el borde superior (para fotos y duración real de videos) */}
       {items.length > 0 && (
         <div className="fixed top-0 inset-x-0 h-[3px] z-40 bg-gala-obsidian/50">
           <div
             className="h-full bg-gradient-to-r from-gala-silver via-gala-gold to-gala-champagne transition-all duration-100 ease-linear"
-            style={{ width: `${currentIsVideo ? 100 : progressPct}%` }}
+            style={{ width: `${currentIsVideo ? videoProgressPct : progressPct}%` }}
           />
         </div>
       )}
@@ -441,12 +487,31 @@ export const LiveWallScreen: React.FC<LiveWallScreenProps> = ({ onExit }) => {
 
                   {currentItem.tipo_medio === 'VIDEO' ? (
                     <video
+                      key={currentItem.id}
+                      ref={videoRef}
                       src={resolvedMediaSrc}
                       autoPlay
-                      onEnded={() =>
-                        setCurrentIndex((prev) => (prev + 1) % items.length)
-                      }
-                      className="relative z-10 max-h-full max-w-full object-contain shadow-2xl"
+                      muted={videoMuted}
+                      playsInline
+                      onTimeUpdate={(e) => {
+                        const v = e.currentTarget;
+                        if (v.duration && Number.isFinite(v.duration) && v.duration > 0) {
+                          setVideoProgressPct(
+                            Math.min(100, (v.currentTime / v.duration) * 100)
+                          );
+                        }
+                      }}
+                      onEnded={() => {
+                        if (isPlaying) {
+                          advanceSlide(1);
+                        }
+                      }}
+                      onError={() => {
+                        if (items.length > 1) {
+                          advanceSlide(1);
+                        }
+                      }}
+                      className="relative z-10 max-h-full max-w-full object-contain shadow-2xl rounded-xl"
                     />
                   ) : (
                     <motion.img
@@ -651,18 +716,42 @@ export const LiveWallScreen: React.FC<LiveWallScreenProps> = ({ onExit }) => {
             <QrCode className="w-3.5 h-3.5 text-gala-gold" />
             <span>{showQrCard ? 'Ocultar QR' : 'Mostrar QR'}</span>
           </button>
+
+          {items.some((i) => i.tipo_medio === 'VIDEO') && (
+            <button
+              type="button"
+              onClick={() => setVideoMuted((prev) => !prev)}
+              className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border text-[11px] font-medium backdrop-blur-md transition ${
+                videoMuted
+                  ? 'bg-gala-obsidian/70 border-gala-silver/25 text-gala-silver'
+                  : 'bg-gala-gold/20 border-gala-gold text-gala-champagne'
+              }`}
+              title={
+                videoMuted
+                  ? 'Activar audio de los videos (el inicio automático usa silencio por compatibilidad del navegador)'
+                  : 'Silenciar audio de videos'
+              }
+            >
+              {videoMuted ? (
+                <>
+                  <VolumeX className="w-3.5 h-3.5 text-gala-silver" />
+                  <span className="hidden sm:inline">Videos sin audio</span>
+                </>
+              ) : (
+                <>
+                  <Volume2 className="w-3.5 h-3.5 text-gala-gold" />
+                  <span className="hidden sm:inline">Audio activo</span>
+                </>
+              )}
+            </button>
+          )}
         </div>
 
         {items.length > 0 && (
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => {
-                setProgressPct(0);
-                setCurrentIndex((prev) =>
-                  prev === 0 ? items.length - 1 : prev - 1
-                );
-              }}
+              onClick={() => advanceSlide(-1)}
               className="px-3.5 py-2 rounded-xl btn-silver text-gala-ivory flex items-center gap-1.5 font-semibold"
             >
               <SkipBack className="w-3.5 h-3.5 text-gala-gold" /> Anterior
@@ -684,12 +773,7 @@ export const LiveWallScreen: React.FC<LiveWallScreenProps> = ({ onExit }) => {
             </button>
             <button
               type="button"
-              onClick={() => {
-                setProgressPct(0);
-                setCurrentIndex((prev) =>
-                  items.length > 0 ? (prev + 1) % items.length : 0
-                );
-              }}
+              onClick={() => advanceSlide(1)}
               className="px-3.5 py-2 rounded-xl btn-silver text-gala-ivory flex items-center gap-1.5 font-semibold"
             >
               Siguiente <SkipForward className="w-3.5 h-3.5 text-gala-gold" />

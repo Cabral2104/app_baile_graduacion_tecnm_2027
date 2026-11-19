@@ -23,6 +23,8 @@ import {
   Search,
   Heart,
   Award,
+  Volume2,
+  VolumeX,
 } from 'lucide-react';
 import { MediaItem, SystemConfig, User, MediaEtapa } from '../types';
 import { api } from '../services/api';
@@ -93,6 +95,9 @@ export const MemoryGallery: React.FC<MemoryGalleryProps> = ({
   const [activeSlide, setActiveSlide] = useState(0);
   const [isPlayingVideo, setIsPlayingVideo] = useState(true);
   const [slideProgressPct, setSlideProgressPct] = useState(0);
+  const [videoMuted, setVideoMuted] = useState(true);
+  const [videoProgressPct, setVideoProgressPct] = useState(0);
+  const slideVideoRef = useRef<HTMLVideoElement | null>(null);
 
   // Estado para ver una foto individual en grande (Una por una)
   const [selectedViewerIndex, setSelectedViewerIndex] = useState<number | null>(null);
@@ -346,7 +351,18 @@ export const MemoryGallery: React.FC<MemoryGalleryProps> = ({
   // Reiniciar barra de progreso cuando cambia de escena
   useEffect(() => {
     setSlideProgressPct(0);
+    setVideoProgressPct(0);
   }, [activeSlide, presentationOpen]);
+
+  // Sincronizar botón Pausar / Reproducir del presentador con el video activo
+  useEffect(() => {
+    if (!presentationOpen || !currentSlideIsVideo || !slideVideoRef.current) return;
+    if (isPlayingVideo) {
+      slideVideoRef.current.play().catch(() => {});
+    } else {
+      slideVideoRef.current.pause();
+    }
+  }, [presentationOpen, isPlayingVideo, activeSlide, currentSlideIsVideo]);
 
   // Avance automático fluido e inmune al polling de fondo de App.tsx
   useEffect(() => {
@@ -878,11 +894,21 @@ export const MemoryGallery: React.FC<MemoryGalleryProps> = ({
                   className="p-2.5 rounded-xl bg-gala-obsidian/80 border border-gala-silver/15 flex items-center justify-between gap-2.5"
                 >
                   <div className="flex items-center gap-2.5 min-w-0">
-                    <img
-                      src={mine.archivo_url}
-                      alt={mine.pie_de_foto}
-                      className="w-12 h-12 rounded-lg object-cover shrink-0 bg-gala-velvet"
-                    />
+                    {mine.tipo_medio === 'VIDEO' ? (
+                      <video
+                        src={mine.archivo_url}
+                        muted
+                        playsInline
+                        preload="metadata"
+                        className="w-12 h-12 rounded-lg object-cover shrink-0 bg-gala-velvet"
+                      />
+                    ) : (
+                      <img
+                        src={mine.archivo_url}
+                        alt={mine.pie_de_foto}
+                        className="w-12 h-12 rounded-lg object-cover shrink-0 bg-gala-velvet"
+                      />
+                    )}
                     <div className="min-w-0">
                       <p className="text-xs text-gala-ivory truncate font-medium">
                         "{mine.pie_de_foto}"
@@ -975,10 +1001,19 @@ export const MemoryGallery: React.FC<MemoryGalleryProps> = ({
                       className="relative aspect-[4/3] bg-gala-obsidian overflow-hidden flex items-center justify-center cursor-pointer"
                     >
                       {item.tipo_medio === 'VIDEO' ? (
-                        <video
-                          src={item.archivo_url}
-                          className="w-full h-full object-contain"
-                        />
+                        <>
+                          <video
+                            src={item.archivo_url}
+                            muted
+                            playsInline
+                            preload="metadata"
+                            className="w-full h-full object-cover"
+                          />
+                          <div className="absolute top-2.5 right-2.5 px-2 py-0.5 rounded-full bg-gala-obsidian/80 border border-gala-gold/45 text-[10px] font-mono text-gala-champagne flex items-center gap-1">
+                            <Film className="w-3 h-3 text-gala-gold" />
+                            <span>VIDEO</span>
+                          </div>
+                        </>
                       ) : (
                         <img
                           src={item.archivo_url}
@@ -1200,7 +1235,7 @@ export const MemoryGallery: React.FC<MemoryGalleryProps> = ({
                     <div
                       className="h-full bg-gradient-to-r from-gala-silver via-gala-gold to-gala-champagne transition-all duration-100 ease-linear"
                       style={{
-                        width: `${currentSlideIsVideo ? 100 : slideProgressPct}%`,
+                        width: `${currentSlideIsVideo ? videoProgressPct : slideProgressPct}%`,
                       }}
                     />
                   </div>
@@ -1225,11 +1260,36 @@ export const MemoryGallery: React.FC<MemoryGalleryProps> = ({
                     >
                       {currentSlideItem.tipo_medio === 'VIDEO' ? (
                         <video
+                          key={currentSlideItem.id}
+                          ref={slideVideoRef}
                           src={currentSlideItem.archivo_url}
                           autoPlay
+                          muted={videoMuted}
+                          playsInline
                           controls
+                          onTimeUpdate={(e) => {
+                            const v = e.currentTarget;
+                            if (v.duration && Number.isFinite(v.duration) && v.duration > 0) {
+                              setVideoProgressPct(
+                                Math.min(100, (v.currentTime / v.duration) * 100)
+                              );
+                            }
+                          }}
                           onEnded={() => {
+                            if (!isPlayingVideo) return;
+                            setSlideProgressPct(0);
+                            setVideoProgressPct(0);
+                            if (videoMemories.length <= 1 && slideVideoRef.current) {
+                              slideVideoRef.current.currentTime = 0;
+                              slideVideoRef.current.play().catch(() => {});
+                              return;
+                            }
                             setActiveSlide((prev) => (prev + 1) % videoMemories.length);
+                          }}
+                          onError={() => {
+                            if (videoMemories.length > 1) {
+                              setActiveSlide((prev) => (prev + 1) % videoMemories.length);
+                            }
                           }}
                           className="max-h-full max-w-full object-contain rounded-2xl border border-gala-silver/35 shadow-[0_0_50px_rgba(4,8,24,0.95)]"
                         />
@@ -1312,6 +1372,7 @@ export const MemoryGallery: React.FC<MemoryGalleryProps> = ({
                         onClick={() => {
                           setActiveSlide(0);
                           setSlideProgressPct(0);
+                          setVideoProgressPct(0);
                           setIsPlayingVideo(true);
                         }}
                         title="Reiniciar desde la primera escena"
@@ -1319,6 +1380,25 @@ export const MemoryGallery: React.FC<MemoryGalleryProps> = ({
                       >
                         <RotateCcw className="w-4 h-4" />
                       </button>
+
+                      {videoMemories.some((i) => i.tipo_medio === 'VIDEO') && (
+                        <button
+                          type="button"
+                          onClick={() => setVideoMuted((m) => !m)}
+                          title={videoMuted ? 'Activar sonido de videos' : 'Silenciar videos'}
+                          className={`p-2.5 rounded-xl border transition ${
+                            videoMuted
+                              ? 'bg-gala-surface/90 border-gala-silver/30 text-gala-silver'
+                              : 'bg-gala-gold/20 border-gala-gold text-gala-champagne'
+                          }`}
+                        >
+                          {videoMuted ? (
+                            <VolumeX className="w-4 h-4" />
+                          ) : (
+                            <Volume2 className="w-4 h-4 text-gala-gold" />
+                          )}
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>

@@ -23,6 +23,7 @@ import {
   Heart,
   Award,
   Maximize2,
+  Film,
 } from 'lucide-react';
 import { MediaItem, SystemConfig, User } from '../types';
 import { api } from '../services/api';
@@ -340,14 +341,22 @@ export const PartyDaySection: React.FC<PartyDaySectionProps> = ({
     loadMyLiveUploads();
   }, [currentUser?.id]);
 
-  // Si está activado "Pasar Fotos Automáticamente" aquí mismo, avanza cada 4.5 segundos
+  // Si está activado "Pasar Fotos Automáticamente" aquí mismo, avanza cada 4.5s para fotos (los videos avanzan al terminar)
   useEffect(() => {
-    if (!autoPlayInline || filteredPartyPhotos.length === 0) return;
+    const activeInlineItem =
+      filteredPartyPhotos[currentPhotoIdx] || filteredPartyPhotos[0] || null;
+    if (
+      !autoPlayInline ||
+      filteredPartyPhotos.length === 0 ||
+      activeInlineItem?.tipo_medio === 'VIDEO'
+    ) {
+      return;
+    }
     const timer = setTimeout(() => {
       setCurrentPhotoIdx((prev) => (prev + 1) % filteredPartyPhotos.length);
     }, 4500);
     return () => clearTimeout(timer);
-  }, [autoPlayInline, currentPhotoIdx, filteredPartyPhotos.length]);
+  }, [autoPlayInline, currentPhotoIdx, filteredPartyPhotos]);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const rawFile = e.target.files?.[0];
@@ -909,11 +918,21 @@ export const PartyDaySection: React.FC<PartyDaySectionProps> = ({
                   className="p-2.5 rounded-xl bg-gala-obsidian/80 border border-gala-silver/15 flex items-center justify-between gap-2.5"
                 >
                   <div className="flex items-center gap-2.5 min-w-0">
-                    <img
-                      src={mine.archivo_url}
-                      alt={mine.pie_de_foto}
-                      className="w-12 h-12 rounded-lg object-cover shrink-0 bg-gala-velvet"
-                    />
+                    {mine.tipo_medio === 'VIDEO' ? (
+                      <video
+                        src={mine.archivo_url}
+                        muted
+                        playsInline
+                        preload="metadata"
+                        className="w-12 h-12 rounded-lg object-cover shrink-0 bg-gala-velvet"
+                      />
+                    ) : (
+                      <img
+                        src={mine.archivo_url}
+                        alt={mine.pie_de_foto}
+                        className="w-12 h-12 rounded-lg object-cover shrink-0 bg-gala-velvet"
+                      />
+                    )}
                     <div className="min-w-0">
                       <p className="text-xs text-gala-ivory truncate font-medium">
                         "{mine.pie_de_foto}"
@@ -1021,9 +1040,19 @@ export const PartyDaySection: React.FC<PartyDaySectionProps> = ({
               >
                 {currentPhoto.tipo_medio === 'VIDEO' ? (
                   <video
+                    key={currentPhoto.id}
                     src={currentPhoto.archivo_url}
                     controls
                     autoPlay
+                    muted
+                    playsInline
+                    onEnded={() => {
+                      if (autoPlayInline && filteredPartyPhotos.length > 1) {
+                        setCurrentPhotoIdx(
+                          (prev) => (prev + 1) % filteredPartyPhotos.length
+                        );
+                      }
+                    }}
                     className="w-full h-full object-contain"
                   />
                 ) : (
@@ -1258,11 +1287,27 @@ export const PartyDaySection: React.FC<PartyDaySectionProps> = ({
                       onClick={() => setLightboxIndex(globalIdx)}
                       className="relative aspect-[4/3] bg-gala-obsidian cursor-pointer overflow-hidden"
                     >
-                      <img
-                        src={item.archivo_url}
-                        alt={item.pie_de_foto}
-                        className="w-full h-full object-cover group-hover:scale-105 transition duration-500"
-                      />
+                      {item.tipo_medio === 'VIDEO' ? (
+                        <>
+                          <video
+                            src={item.archivo_url}
+                            muted
+                            playsInline
+                            preload="metadata"
+                            className="w-full h-full object-cover"
+                          />
+                          <div className="absolute top-2.5 right-2.5 px-2 py-0.5 rounded-full bg-gala-obsidian/80 border border-gala-gold/45 text-[10px] font-mono text-gala-champagne flex items-center gap-1">
+                            <Film className="w-3 h-3 text-gala-gold" />
+                            <span>VIDEO</span>
+                          </div>
+                        </>
+                      ) : (
+                        <img
+                          src={item.archivo_url}
+                          alt={item.pie_de_foto}
+                          className="w-full h-full object-cover group-hover:scale-105 transition duration-500"
+                        />
+                      )}
                       <div className="absolute inset-x-0 bottom-0 h-14 bg-gradient-to-t from-gala-obsidian/80 to-transparent pointer-events-none" />
                       <div className="absolute top-2.5 left-2.5 flex items-center gap-1.5">
                         {sortMode === 'TOP_REACTIONS' && globalIdx < 3 && (
