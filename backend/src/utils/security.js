@@ -1,6 +1,13 @@
 const crypto = require('node:crypto');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'gala_graduacion_universitaria_secret_key_2026';
+const DEFAULT_JWT_SECRET = 'gala_graduacion_universitaria_secret_key_2026';
+const JWT_SECRET = process.env.JWT_SECRET || DEFAULT_JWT_SECRET;
+
+if (process.env.NODE_ENV === 'production' && JWT_SECRET === DEFAULT_JWT_SECRET) {
+  console.warn(
+    '[Seguridad] Advertencia: define JWT_SECRET en las variables de entorno antes de operar en producción.'
+  );
+}
 
 /**
  * Normaliza un texto eliminando acentos/diacríticos, convirtiendo a minúsculas
@@ -71,7 +78,11 @@ function verifyToken(token) {
     .update(data)
     .digest('base64url');
 
-  if (signature !== expectedSig) return null;
+  const sigBuf = Buffer.from(signature, 'utf8');
+  const expectedBuf = Buffer.from(expectedSig, 'utf8');
+  if (sigBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(sigBuf, expectedBuf)) {
+    return null;
+  }
 
   try {
     const payload = JSON.parse(Buffer.from(base64Payload, 'base64url').toString('utf8'));

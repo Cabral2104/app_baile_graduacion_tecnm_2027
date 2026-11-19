@@ -244,9 +244,40 @@ router.get('/me', requireAuth, (req, res) => {
  * POST /api/auth/guest-access
  * Body: { nombre: string, mesa: string }
  */
+const MAX_GUEST_CREATIONS_PER_IP = 20;
+const guestCreationBuckets = new Map();
+
+function isGuestRateLimited(ip, now) {
+  if (guestCreationBuckets.size > 2000) {
+    for (const [k, v] of guestCreationBuckets.entries()) {
+      if (now - v.firstAttemptAt > PIN_WINDOW_MS) {
+        guestCreationBuckets.delete(k);
+      }
+    }
+  }
+  const entry = guestCreationBuckets.get(ip);
+  if (!entry || now - entry.firstAttemptAt > PIN_WINDOW_MS) {
+    guestCreationBuckets.set(ip, { count: 1, firstAttemptAt: now });
+    return false;
+  }
+  entry.count += 1;
+  return entry.count > MAX_GUEST_CREATIONS_PER_IP;
+}
+
 router.post('/guest-access', (req, res) => {
-  const nombre = String(req.body.nombre || req.body.nombre_completo || '').trim();
-  const mesa = String(req.body.mesa || 'Mesa General').trim();
+  const clientIp = getClientIp(req);
+  if (isGuestRateLimited(clientIp, Date.now())) {
+    return res.status(429).json({
+      error: 'Demasiados registros recientes desde esta conexión. Espera unos minutos antes de volver a intentar.',
+    });
+  }
+
+  const nombre = String(req.body.nombre || req.body.nombre_completo || '')
+    .trim()
+    .slice(0, 100);
+  const mesa = String(req.body.mesa || 'Mesa General')
+    .trim()
+    .slice(0, 60);
 
   if (!nombre) {
     return res.status(400).json({

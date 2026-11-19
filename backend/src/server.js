@@ -13,7 +13,15 @@ const PORT = process.env.PORT || 4000;
 const HOST = process.env.HOST || '0.0.0.0';
 const FRONTEND_DIST_DIR = path.resolve(__dirname, '../../frontend/dist');
 
+app.disable('x-powered-by');
 app.set('trust proxy', 1);
+
+app.use((_req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  next();
+});
 
 app.use(
   cors({
@@ -26,13 +34,20 @@ app.use(
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
-// Servir archivos multimedia del bucket local (/storage/uploads) con cabeceras CORS para precarga Blob y descargas HD
+// Servir archivos multimedia del bucket local (/storage/uploads) con cabeceras CORS, nosniff y sandbox para SVGs
 app.use(
   '/uploads',
   express.static(STORAGE_UPLOADS_DIR, {
-    setHeaders: (res) => {
+    setHeaders: (res, filePath) => {
       res.setHeader('Access-Control-Allow-Origin', '*');
       res.setHeader('Cache-Control', 'public, max-age=31536000');
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      if (String(filePath || '').toLowerCase().endsWith('.svg')) {
+        res.setHeader(
+          'Content-Security-Policy',
+          "sandbox; default-src 'none'; style-src 'unsafe-inline'"
+        );
+      }
     },
   })
 );
@@ -92,15 +107,18 @@ if (fs.existsSync(path.join(FRONTEND_DIST_DIR, 'index.html'))) {
   });
 }
 
-// Manejador de errores global (incluye límites de tamaño de Multer)
+// Manejador de errores global (incluye límites de tamaño y formato de Multer)
 app.use((err, _req, res, _next) => {
   if (err && err.code === 'LIMIT_FILE_SIZE') {
     return res.status(413).json({
       error: 'El archivo supera el límite máximo permitido de 50 MB.',
     });
   }
-  console.error('[Backend Error]:', err);
-  return res.status(500).json({
+  const statusCode = Number(err?.status) || 500;
+  if (statusCode >= 500) {
+    console.error('[Backend Error]:', err);
+  }
+  return res.status(statusCode).json({
     error: err?.message || 'Error interno en el servidor.',
   });
 });

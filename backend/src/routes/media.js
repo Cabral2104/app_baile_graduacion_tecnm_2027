@@ -31,15 +31,25 @@ function optionalAuth(req, _res, next) {
 
 const router = express.Router();
 
+const ALLOWED_MEDIA_EXTENSIONS = new Set([
+  '.jpg',
+  '.jpeg',
+  '.png',
+  '.webp',
+  '.heic',
+  '.heif',
+  '.mp4',
+  '.mov',
+  '.webm',
+]);
+
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => {
     cb(null, STORAGE_UPLOADS_DIR);
   },
   filename: (_req, file, cb) => {
-    const ext = path.extname(file.originalname || '').toLowerCase() || '.jpg';
-    const safeExt = ['.jpg', '.jpeg', '.png', '.webp', '.heic', '.mp4', '.mov', '.webm', '.svg'].includes(ext)
-      ? ext
-      : '.jpg';
+    const ext = path.extname(file.originalname || '').toLowerCase();
+    const safeExt = ALLOWED_MEDIA_EXTENSIONS.has(ext) ? ext : '.jpg';
     cb(null, `media_${Date.now()}_${crypto.randomUUID().slice(0, 8)}${safeExt}`);
   },
 });
@@ -48,6 +58,23 @@ const upload = multer({
   storage,
   limits: {
     fileSize: 50 * 1024 * 1024,
+  },
+  fileFilter: (_req, file, cb) => {
+    const mime = String(file.mimetype || '').toLowerCase();
+    const ext = path.extname(file.originalname || '').toLowerCase();
+    const isAllowedMime =
+      (mime.startsWith('image/') && mime !== 'image/svg+xml') ||
+      mime.startsWith('video/');
+    const isAllowedExt = !ext || ALLOWED_MEDIA_EXTENSIONS.has(ext);
+
+    if (!isAllowedMime || !isAllowedExt) {
+      const err = new Error(
+        'Formato de archivo no permitido. Usa únicamente fotografías (JPG, PNG, WEBP, HEIC) o videos cortos (MP4, MOV, WEBM).'
+      );
+      err.status = 400;
+      return cb(err);
+    }
+    return cb(null, true);
   },
 });
 
@@ -119,7 +146,7 @@ router.post('/upload', requireAuth, upload.single('archivo'), (req, res) => {
   const rawEtapa = String(req.body.etapa || (origen === 'EN_VIVO' ? 'GALA' : 'INICIO')).toUpperCase();
   const etapa = VALID_ETAPAS.includes(rawEtapa) ? rawEtapa : 'INICIO';
 
-  const pieDeFoto = String(req.body.pie_de_foto || '').trim();
+  const pieDeFoto = String(req.body.pie_de_foto || '').trim().slice(0, 400);
   if (!pieDeFoto) {
     return res.status(400).json({
       error: 'El pie de foto o descripción del recuerdo es obligatorio.',
@@ -419,16 +446,18 @@ router.delete('/:id', requireAuth, (req, res) => {
   });
 });
 
-router.post('/:id/request-takedown', (req, res) => {
+router.post('/:id/request-takedown', requireAuth, (req, res) => {
   const { id } = req.params;
-  const { motivo, solicitante } = req.body || {};
+  const { motivo } = req.body || {};
 
   const existing = db.prepare('SELECT id, pie_de_foto FROM MediaItem WHERE id = ?').get(id);
   if (!existing) {
     return res.status(404).json({ error: 'Elemento multimedia no encontrado.' });
   }
 
-  const motivoTexto = `${solicitante ? `[${solicitante}] ` : ''}${motivo || 'Solicitud de privacidad'}`.trim();
+  const solicitanteNombre = String(req.user.nombre_completo || 'Usuario').trim().slice(0, 100);
+  const motivoLimpio = String(motivo || 'Solicitud de privacidad').trim().slice(0, 300) || 'Solicitud de privacidad';
+  const motivoTexto = `[${solicitanteNombre}] ${motivoLimpio}`.trim();
 
   db.prepare(`
     UPDATE MediaItem

@@ -461,16 +461,35 @@ export const MemoryGallery: React.FC<MemoryGalleryProps> = ({
   const handleRequestTakedown = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!takedownTarget) return;
-    const res = await api.requestTakedown(
-      takedownTarget.id,
-      takedownReason.trim() || 'Solicitud de privacidad',
-      currentUser?.nombre_completo || 'Graduado'
-    );
-    setTakedownTarget(null);
-    setTakedownReason('');
-    setFeedbackBanner(res.message);
-    onRefresh();
-    setTimeout(() => setFeedbackBanner(null), 5000);
+    if (!currentUser) {
+      onRequireAuth();
+      return;
+    }
+    const ok = await confirm({
+      title: '¿Ocultar fotografía por privacidad?',
+      description:
+        'La fotografía desaparecerá de la galería pública de inmediato y quedará marcada para revisión de las organizadoras.',
+      confirmText: 'Sí, ocultar ahora',
+      variant: 'warning',
+    });
+    if (!ok) return;
+
+    try {
+      const res = await api.requestTakedown(
+        takedownTarget.id,
+        takedownReason.trim() || 'Solicitud de privacidad',
+        currentUser.nombre_completo
+      );
+      setTakedownTarget(null);
+      setTakedownReason('');
+      setFeedbackBanner(res.message);
+      onRefresh();
+      setTimeout(() => setFeedbackBanner(null), 5000);
+    } catch (err: any) {
+      setTakedownTarget(null);
+      setFeedbackBanner(err.message || 'No fue posible procesar el retiro en este momento.');
+      setTimeout(() => setFeedbackBanner(null), 5000);
+    }
   };
 
   return (
@@ -1089,6 +1108,10 @@ export const MemoryGallery: React.FC<MemoryGalleryProps> = ({
                     <button
                       type="button"
                       onClick={() => {
+                        if (!currentUser) {
+                          onRequireAuth();
+                          return;
+                        }
                         setTakedownTarget(item);
                         setTakedownReason('');
                       }}
