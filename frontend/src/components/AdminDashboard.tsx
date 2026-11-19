@@ -1198,7 +1198,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <div className="w-20 h-14 rounded-lg overflow-hidden bg-gala-obsidian border border-gala-silver/25 shrink-0">
                       {item.tipo_medio === 'VIDEO' ? (
                         <video
-                          src={item.archivo_url}
+                          src={`${item.archivo_url}#t=0.1`}
                           muted
                           playsInline
                           preload="metadata"

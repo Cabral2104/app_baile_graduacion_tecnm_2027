@@ -942,7 +942,7 @@ export const PartyDaySection: React.FC<PartyDaySectionProps> = ({
                   <div className="flex items-center gap-2.5 min-w-0">
                     {mine.tipo_medio === 'VIDEO' ? (
                       <video
-                        src={mine.archivo_url}
+                        src={`${mine.archivo_url}#t=0.1`}
                         muted
                         playsInline
                         preload="metadata"
@@ -1271,11 +1271,26 @@ export const PartyDaySection: React.FC<PartyDaySectionProps> = ({
                     : 'border-gala-silver/20 opacity-60 hover:opacity-100'
                 }`}
               >
-                <img
-                  src={thumb.archivo_url}
-                  alt={thumb.pie_de_foto}
-                  className="w-full h-full object-cover"
-                />
+                {thumb.tipo_medio === 'VIDEO' ? (
+                  <>
+                    <video
+                      src={`${thumb.archivo_url}#t=0.1`}
+                      muted
+                      playsInline
+                      preload="metadata"
+                      className="w-full h-full object-cover"
+                    />
+                    <span className="absolute top-1 left-1 px-1 py-0.5 rounded bg-gala-obsidian/85 border border-gala-gold/40 text-[8.5px] font-mono text-gala-champagne flex items-center gap-0.5">
+                      <Film className="w-2.5 h-2.5 text-gala-gold" />
+                    </span>
+                  </>
+                ) : (
+                  <img
+                    src={thumb.archivo_url}
+                    alt={thumb.pie_de_foto}
+                    className="w-full h-full object-cover"
+                  />
+                )}
                 <span className="absolute bottom-1 left-1 px-1.5 bg-gala-obsidian/85 text-[10px] font-mono text-gala-champagne rounded">
                   {idx + 1}
                 </span>
@@ -1312,7 +1327,7 @@ export const PartyDaySection: React.FC<PartyDaySectionProps> = ({
                       {item.tipo_medio === 'VIDEO' ? (
                         <>
                           <video
-                            src={item.archivo_url}
+                            src={`${item.archivo_url}#t=0.1`}
                             muted
                             playsInline
                             preload="metadata"

@@ -916,7 +916,7 @@ export const MemoryGallery: React.FC<MemoryGalleryProps> = ({
                   <div className="flex items-center gap-2.5 min-w-0">
                     {mine.tipo_medio === 'VIDEO' ? (
                       <video
-                        src={mine.archivo_url}
+                        src={`${mine.archivo_url}#t=0.1`}
                         muted
                         playsInline
                         preload="metadata"
@@ -1023,7 +1023,7 @@ export const MemoryGallery: React.FC<MemoryGalleryProps> = ({
                       {item.tipo_medio === 'VIDEO' ? (
                         <>
                           <video
-                            src={item.archivo_url}
+                            src={`${item.archivo_url}#t=0.1`}
                             muted
                             playsInline
                             preload="metadata"
