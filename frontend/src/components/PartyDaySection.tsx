@@ -91,6 +91,7 @@ export const PartyDaySection: React.FC<PartyDaySectionProps> = ({
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isVideo, setIsVideo] = useState(false);
   const [videoDuration, setVideoDuration] = useState<number | null>(null);
+  const [processingFile, setProcessingFile] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [bannerMsg, setBannerMsg] = useState<string | null>(null);
@@ -360,22 +361,29 @@ export const PartyDaySection: React.FC<PartyDaySectionProps> = ({
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const rawFile = e.target.files?.[0];
+    e.target.value = '';
     if (!rawFile) return;
     setUploadError(null);
 
     if (rawFile.size > 50 * 1024 * 1024) {
-      setUploadError('El archivo supera el límite de 50 MB.');
+      setUploadError(
+        `El archivo pesa ${formatBytes(rawFile.size)} y supera el límite de 50 MB.`
+      );
       return;
     }
 
     const fileIsVideo =
-      rawFile.type.startsWith('video/') || /\.(mp4|mov|webm)$/i.test(rawFile.name);
+      rawFile.type.startsWith('video/') ||
+      /\.(mp4|mov|webm|m4v|3gp)$/i.test(rawFile.name);
 
+    setProcessingFile(true);
     try {
       if (fileIsVideo) {
-        const duration = await getVideoDurationSeconds(rawFile).catch(() => 15);
-        if (duration > 45) {
-          setUploadError('El video no debe durar más de 45 segundos.');
+        const duration = await getVideoDurationSeconds(rawFile).catch(() => null);
+        if (duration !== null && duration > 45) {
+          setUploadError(
+            `El video seleccionado dura ${Math.round(duration)} segundos (el máximo permitido es 45 segundos).`
+          );
           return;
         }
         setIsVideo(true);
@@ -391,6 +399,8 @@ export const PartyDaySection: React.FC<PartyDaySectionProps> = ({
       }
     } catch {
       setUploadError('No se pudo procesar la foto o video.');
+    } finally {
+      setProcessingFile(false);
     }
   };
 
@@ -596,7 +606,7 @@ export const PartyDaySection: React.FC<PartyDaySectionProps> = ({
               <input
                 ref={fileInputRef}
                 type="file"
-                accept="image/*,video/mp4,video/quicktime,video/webm"
+                accept="image/*,video/*"
                 onChange={handleFileChange}
                 className="hidden"
               />
@@ -604,15 +614,18 @@ export const PartyDaySection: React.FC<PartyDaySectionProps> = ({
               {!selectedFile ? (
                 <button
                   type="button"
+                  disabled={processingFile}
                   onClick={() => fileInputRef.current?.click()}
-                  className="w-full py-8 px-4 rounded-xl border-2 border-dashed border-gala-silver/35 hover:border-gala-gold bg-gala-obsidian/70 flex flex-col items-center justify-center gap-2 text-center transition"
+                  className="w-full py-8 px-4 rounded-xl border-2 border-dashed border-gala-silver/35 hover:border-gala-gold bg-gala-obsidian/70 flex flex-col items-center justify-center gap-2 text-center transition disabled:opacity-60"
                 >
                   <Camera className="w-6 h-6 text-gala-gold" />
                   <span className="text-sm font-medium text-gala-ivory">
-                    Toca aquí para tomar una foto o elegirla de tu celular
+                    {processingFile
+                      ? 'Procesando foto o video de tu celular...'
+                      : 'Toca aquí para tomar una foto o elegirla de tu celular'}
                   </span>
                   <span className="text-xs text-gala-muted">
-                    Aparecerá con tu nombre y tu mesa ({currentUser?.mesa || 'Invitado'})
+                    Fotos o videos de hasta 45 segundos · Tu nombre ({currentUser?.mesa || 'Invitado'})
                   </span>
                 </button>
               ) : (
@@ -624,6 +637,8 @@ export const PartyDaySection: React.FC<PartyDaySectionProps> = ({
                           src={previewUrl || undefined}
                           className="w-full h-full object-cover"
                           muted
+                          playsInline
+                          preload="metadata"
                         />
                       ) : (
                         <img
@@ -638,7 +653,8 @@ export const PartyDaySection: React.FC<PartyDaySectionProps> = ({
                         {selectedFile.name}
                       </div>
                       <div className="text-[11px] text-gala-muted">
-                        {formatBytes(selectedFile.size)}
+                        {videoDuration !== null ? `${videoDuration}s · ` : ''}
+                        {formatBytes(selectedFile.size)} · Listo para publicar
                       </div>
                     </div>
                   </div>
@@ -647,11 +663,20 @@ export const PartyDaySection: React.FC<PartyDaySectionProps> = ({
                     onClick={() => {
                       setSelectedFile(null);
                       setPreviewUrl(null);
+                      setVideoDuration(null);
+                      setIsVideo(false);
                     }}
-                    className="px-3 py-1.5 rounded-lg bg-red-950/60 text-xs text-red-200 border border-red-500/30 flex items-center gap-1"
+                    className="px-3 py-1.5 rounded-lg bg-red-950/60 text-xs text-red-200 border border-red-500/30 flex items-center gap-1 shrink-0"
                   >
                     <Trash2 className="w-3.5 h-3.5" /> Quitar
                   </button>
+                </div>
+              )}
+
+              {uploadError && (
+                <div className="p-3 rounded-xl bg-red-950/75 border border-red-500/50 text-xs text-red-200 flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
+                  <span>{uploadError}</span>
                 </div>
               )}
 
@@ -683,19 +708,16 @@ export const PartyDaySection: React.FC<PartyDaySectionProps> = ({
                 </p>
               </div>
 
-              {uploadError && (
-                <div className="p-3 rounded-xl bg-red-950/60 border border-red-500/40 text-xs text-red-200 flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
-                  <span>{uploadError}</span>
-                </div>
-              )}
-
               <button
                 type="submit"
-                disabled={uploading || !selectedFile}
+                disabled={uploading || processingFile || !selectedFile}
                 className="w-full py-3.5 rounded-xl btn-gold disabled:opacity-40 text-gala-obsidian font-semibold text-sm transition"
               >
-                {uploading ? 'Subiendo foto...' : 'Publicar en el Día de la Fiesta'}
+                {uploading
+                  ? isVideo
+                    ? 'Subiendo video...'
+                    : 'Subiendo foto...'
+                  : 'Publicar en el Día de la Fiesta'}
               </button>
             </motion.form>
           )}

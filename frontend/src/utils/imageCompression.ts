@@ -119,19 +119,48 @@ export function getVideoDurationSeconds(videoFile: File): Promise<number> {
   return new Promise((resolve, reject) => {
     const video = document.createElement('video');
     video.preload = 'metadata';
+    video.muted = true;
+    video.playsInline = true;
+    video.setAttribute('playsinline', '');
     const objectUrl = URL.createObjectURL(videoFile);
+    let settled = false;
+
+    const cleanup = () => {
+      window.clearTimeout(timer);
+      video.onloadedmetadata = null;
+      video.onerror = null;
+      video.removeAttribute('src');
+      URL.revokeObjectURL(objectUrl);
+    };
+
+    const timer = window.setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(new Error('Tiempo de espera agotado leyendo metadatos del video.'));
+    }, 3500);
 
     video.onloadedmetadata = () => {
-      URL.revokeObjectURL(objectUrl);
-      resolve(Number(video.duration.toFixed(1)));
+      if (settled) return;
+      settled = true;
+      const dur = Number(video.duration);
+      cleanup();
+      if (Number.isFinite(dur) && dur > 0) {
+        resolve(Number(dur.toFixed(1)));
+      } else {
+        reject(new Error('Duración de video no disponible.'));
+      }
     };
 
     video.onerror = () => {
-      URL.revokeObjectURL(objectUrl);
+      if (settled) return;
+      settled = true;
+      cleanup();
       reject(new Error('No fue posible leer los metadatos del archivo de video.'));
     };
 
     video.src = objectUrl;
+    video.load();
   });
 }
 

@@ -6,7 +6,7 @@ const { db, STORAGE_UPLOADS_DIR } = require('./db/database');
 const { authRouter } = require('./routes/auth');
 const { mediaRouter } = require('./routes/media');
 const { adminRouter } = require('./routes/admin');
-const { addClient, getConnectedCount } = require('./realtime/liveHub');
+const { addClient, getConnectedCount, closeAllClients } = require('./realtime/liveHub');
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -66,16 +66,19 @@ app.get('/api/config', (_req, res) => {
 });
 
 // Canal en Tiempo Real (SSE) para sincronización instantánea con /pantalla-en-vivo y Panel Admin
+// Sin header "Connection: keep-alive" (prohibido en HTTP/2) para evitar ERR_HTTP2_PROTOCOL_ERROR en proxies Edge
 app.get('/api/live/stream', (req, res) => {
   res.writeHead(200, {
-    'Content-Type': 'text/event-stream',
+    'Content-Type': 'text/event-stream; charset=utf-8',
     'Cache-Control': 'no-cache, no-transform',
-    Connection: 'keep-alive',
     'Access-Control-Allow-Origin': '*',
     'X-Accel-Buffering': 'no',
   });
+  if (typeof res.flushHeaders === 'function') {
+    res.flushHeaders();
+  }
 
-  res.write(`event: CONNECTED\ndata: ${JSON.stringify({ connectedAt: new Date().toISOString() })}\n\n`);
+  res.write(`retry: 3000\nevent: CONNECTED\ndata: ${JSON.stringify({ connectedAt: new Date().toISOString() })}\n\n`);
   addClient(res);
 
   const heartbeat = setInterval(() => {
@@ -123,11 +126,30 @@ app.use((err, _req, res, _next) => {
   });
 });
 
-app.listen(PORT, HOST, () => {
+const httpServer = app.listen(PORT, HOST, () => {
   console.log(`====================================================================`);
   console.log(`  GALA DE GRADUACION UNIVERSITARIA - BACKEND API & REALTIME SERVER  `);
   console.log(`  Servidor activo en: http://${HOST}:${PORT}                        `);
   console.log(`  Almacenamiento en:  ${STORAGE_UPLOADS_DIR}                        `);
   console.log(`====================================================================`);
 });
+
+function gracefulShutdown(signal) {
+  console.log(`[Servidor] Recibida señal ${signal}, cerrando conexiones y SQLite limpiamente...`);
+  closeAllClients();
+  const forceTimer = setTimeout(() => process.exit(0), 2500);
+  forceTimer.unref();
+  httpServer.close(() => {
+    try {
+      db.close();
+    } catch {
+      // Ignorar si ya estaba cerrada
+    }
+    clearTimeout(forceTimer);
+    process.exit(0);
+  });
+}
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 

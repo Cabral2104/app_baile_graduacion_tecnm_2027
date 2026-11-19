@@ -38,10 +38,31 @@ const ALLOWED_MEDIA_EXTENSIONS = new Set([
   '.webp',
   '.heic',
   '.heif',
+  '.jfif',
+  '.avif',
+  '.gif',
   '.mp4',
   '.mov',
   '.webm',
+  '.m4v',
+  '.3gp',
 ]);
+
+const MIME_TO_EXT = {
+  'image/jpeg': '.jpg',
+  'image/jpg': '.jpg',
+  'image/png': '.png',
+  'image/webp': '.webp',
+  'image/heic': '.heic',
+  'image/heif': '.heif',
+  'image/gif': '.gif',
+  'image/avif': '.avif',
+  'video/mp4': '.mp4',
+  'video/quicktime': '.mov',
+  'video/webm': '.webm',
+  'video/x-m4v': '.m4v',
+  'video/3gpp': '.3gp',
+};
 
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => {
@@ -49,7 +70,10 @@ const storage = multer.diskStorage({
   },
   filename: (_req, file, cb) => {
     const ext = path.extname(file.originalname || '').toLowerCase();
-    const safeExt = ALLOWED_MEDIA_EXTENSIONS.has(ext) ? ext : '.jpg';
+    const mime = String(file.mimetype || '').toLowerCase();
+    const safeExt = ALLOWED_MEDIA_EXTENSIONS.has(ext)
+      ? ext
+      : MIME_TO_EXT[mime] || '.jpg';
     cb(null, `media_${Date.now()}_${crypto.randomUUID().slice(0, 8)}${safeExt}`);
   },
 });
@@ -62,12 +86,13 @@ const upload = multer({
   fileFilter: (_req, file, cb) => {
     const mime = String(file.mimetype || '').toLowerCase();
     const ext = path.extname(file.originalname || '').toLowerCase();
-    const isAllowedMime =
+    const isMediaMime =
       (mime.startsWith('image/') && mime !== 'image/svg+xml') ||
       mime.startsWith('video/');
+    const isGenericMime = !mime || mime === 'application/octet-stream';
     const isAllowedExt = !ext || ALLOWED_MEDIA_EXTENSIONS.has(ext);
 
-    if (!isAllowedMime || !isAllowedExt) {
+    if ((!isMediaMime && !(isGenericMime && ext && ALLOWED_MEDIA_EXTENSIONS.has(ext))) || !isAllowedExt) {
       const err = new Error(
         'Formato de archivo no permitido. Usa únicamente fotografías (JPG, PNG, WEBP, HEIC) o videos cortos (MP4, MOV, WEBM).'
       );
@@ -154,7 +179,11 @@ router.post('/upload', requireAuth, upload.single('archivo'), (req, res) => {
   }
 
   const mimeType = req.file.mimetype || 'image/jpeg';
-  const isVideo = mimeType.startsWith('video/') || ['.mp4', '.mov', '.webm'].includes(path.extname(req.file.filename).toLowerCase());
+  const isVideo =
+    mimeType.startsWith('video/') ||
+    ['.mp4', '.mov', '.webm', '.m4v', '.3gp'].includes(
+      path.extname(req.file.filename).toLowerCase()
+    );
   const tipoMedio = isVideo ? 'VIDEO' : 'FOTO';
   const duracionSeg = req.body.duracion_seg ? Number(req.body.duracion_seg) : null;
 

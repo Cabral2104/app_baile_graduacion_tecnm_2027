@@ -109,6 +109,7 @@ export const MemoryGallery: React.FC<MemoryGalleryProps> = ({
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isVideo, setIsVideo] = useState(false);
   const [videoDuration, setVideoDuration] = useState<number | null>(null);
+  const [processingFile, setProcessingFile] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [myPreEventUploads, setMyPreEventUploads] = useState<MediaItem[]>([]);
@@ -401,22 +402,29 @@ export const MemoryGallery: React.FC<MemoryGalleryProps> = ({
 
   const handleSelectFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const rawFile = e.target.files?.[0];
+    e.target.value = '';
     if (!rawFile) return;
     setUploadError(null);
 
     if (rawFile.size > 50 * 1024 * 1024) {
-      setUploadError('El archivo no debe pesar más de 50 MB.');
+      setUploadError(
+        `El archivo pesa ${formatBytes(rawFile.size)} y no debe pesar más de 50 MB.`
+      );
       return;
     }
 
     const fileIsVideo =
-      rawFile.type.startsWith('video/') || /\.(mp4|mov|webm)$/i.test(rawFile.name);
+      rawFile.type.startsWith('video/') ||
+      /\.(mp4|mov|webm|m4v|3gp)$/i.test(rawFile.name);
 
+    setProcessingFile(true);
     try {
       if (fileIsVideo) {
-        const duration = await getVideoDurationSeconds(rawFile).catch(() => 15);
-        if (duration > 45) {
-          setUploadError('El video corto no debe pasar de 45 segundos.');
+        const duration = await getVideoDurationSeconds(rawFile).catch(() => null);
+        if (duration !== null && duration > 45) {
+          setUploadError(
+            `El video seleccionado dura ${Math.round(duration)} segundos (el máximo permitido es 45 segundos).`
+          );
           return;
         }
         setIsVideo(true);
@@ -432,6 +440,8 @@ export const MemoryGallery: React.FC<MemoryGalleryProps> = ({
       }
     } catch {
       setUploadError('No se pudo leer el archivo seleccionado.');
+    } finally {
+      setProcessingFile(false);
     }
   };
 
@@ -643,22 +653,25 @@ export const MemoryGallery: React.FC<MemoryGalleryProps> = ({
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept="image/*,video/mp4,video/quicktime,video/webm"
+                  accept="image/*,video/*"
                   onChange={handleSelectFile}
                   className="hidden"
                 />
                 {!selectedFile ? (
                   <button
                     type="button"
+                    disabled={processingFile}
                     onClick={() => fileInputRef.current?.click()}
-                    className="w-full py-8 px-4 rounded-xl border-2 border-dashed border-gala-silver/35 hover:border-gala-gold bg-gala-obsidian/70 flex flex-col items-center justify-center gap-2 text-center transition"
+                    className="w-full py-8 px-4 rounded-xl border-2 border-dashed border-gala-silver/35 hover:border-gala-gold bg-gala-obsidian/70 flex flex-col items-center justify-center gap-2 text-center transition disabled:opacity-60"
                   >
                     <Camera className="w-6 h-6 text-gala-gold" />
                     <span className="text-sm font-medium text-gala-ivory">
-                      Toca aquí para seleccionar tu foto o video de la galería
+                      {processingFile
+                        ? 'Procesando foto o video de tu celular...'
+                        : 'Toca aquí para seleccionar tu foto o video de la galería'}
                     </span>
                     <span className="text-xs text-gala-muted">
-                      Fotos o videos de hasta 45 segundos
+                      Fotos o videos de hasta 45 segundos (máx. 50 MB)
                     </span>
                   </button>
                 ) : (
@@ -670,6 +683,8 @@ export const MemoryGallery: React.FC<MemoryGalleryProps> = ({
                             src={previewUrl || undefined}
                             className="w-full h-full object-cover"
                             muted
+                            playsInline
+                            preload="metadata"
                           />
                         ) : (
                           <img
@@ -684,6 +699,7 @@ export const MemoryGallery: React.FC<MemoryGalleryProps> = ({
                           {selectedFile.name}
                         </div>
                         <div className="text-[11px] text-gala-muted">
+                          {videoDuration !== null ? `${videoDuration}s · ` : ''}
                           {formatBytes(selectedFile.size)} · Lista para enviar
                         </div>
                       </div>
@@ -693,11 +709,20 @@ export const MemoryGallery: React.FC<MemoryGalleryProps> = ({
                       onClick={() => {
                         setSelectedFile(null);
                         setPreviewUrl(null);
+                        setVideoDuration(null);
+                        setIsVideo(false);
                       }}
                       className="px-3 py-1.5 rounded-lg bg-red-950/60 text-xs text-red-200 border border-red-500/30 flex items-center gap-1 shrink-0"
                     >
                       <Trash2 className="w-3.5 h-3.5" /> Quitar
                     </button>
+                  </div>
+                )}
+
+                {uploadError && (
+                  <div className="mt-3 p-3 rounded-xl bg-red-950/75 border border-red-500/50 text-xs text-red-200 flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
+                    <span>{uploadError}</span>
                   </div>
                 )}
               </div>
@@ -718,20 +743,15 @@ export const MemoryGallery: React.FC<MemoryGalleryProps> = ({
                 />
               </div>
 
-              {uploadError && (
-                <div className="p-3 rounded-xl bg-red-950/60 border border-red-500/40 text-xs text-red-200 flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
-                  <span>{uploadError}</span>
-                </div>
-              )}
-
               <button
                 type="submit"
-                disabled={uploading || !selectedFile}
+                disabled={uploading || processingFile || !selectedFile}
                 className="w-full py-3.5 rounded-xl btn-gold disabled:opacity-40 text-gala-obsidian font-semibold text-sm transition"
               >
                 {uploading
-                  ? 'Enviando recuerdo...'
+                  ? isVideo
+                    ? 'Subiendo video...'
+                    : 'Enviando recuerdo...'
                   : 'Guardar Recuerdo para el Video'}
               </button>
             </motion.form>

@@ -33,9 +33,21 @@ function getConnectedCount() {
   return clients.size;
 }
 
+function closeAllClients() {
+  for (const client of clients) {
+    try {
+      client.end();
+    } catch {
+      // Ignorar errores al cerrar streams durante el apagado
+    }
+  }
+  clients.clear();
+}
+
 module.exports = {
   addClient,
   broadcastEvent,
   getConnectedCount,
+  closeAllClients,
 };
 

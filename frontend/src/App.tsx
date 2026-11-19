@@ -231,8 +231,12 @@ export const App: React.FC = () => {
       api
         .getCurrentUser()
         .then((res) => setUser(res.user))
-        .catch(() => {
-          // Mantiene la sesión local si el fallo es de red
+        .catch((err: any) => {
+          // Si el token expiró o cambió JWT_SECRET, limpiar sesión inválida para evitar errores 401
+          if (err?.status === 401) {
+            clearSession();
+            setUser(null);
+          }
         });
     }
 

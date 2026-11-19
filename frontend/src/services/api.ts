@@ -68,7 +68,11 @@ async function requestJson<T>(url: string, options: RequestInit = {}): Promise<T
 
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new Error(data.error || `Error HTTP ${res.status}`);
+    const err = new Error(data.error || `Error HTTP ${res.status}`) as Error & {
+      status?: number;
+    };
+    err.status = res.status;
+    throw err;
   }
   return data as T;
 }
